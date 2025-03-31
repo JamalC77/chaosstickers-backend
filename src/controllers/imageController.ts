@@ -3,19 +3,33 @@ import { generateImage } from '../services/openAiService';
 import { saveGeneratedImage, getRecentGeneratedImages, getUserGeneratedImages } from '../services/databaseService';
 
 // Standard prefix to add to all image generation requests
+// Filename: chaosStickersPrompt.js
+// Filename: singleStickerPrompt.js
+
 const PROMPT_PREFIX = `
 This is for a service called ChaosStickers.
-Sticker illustration of a [INSERT USER PROMPT] with:
-- A thick white outline surrounding the entire design
-- Make sure it is recognizably a sticker, with a distinct cutout and cohesive composition
-- Bright, vibrant colors that pop
-- A simplified, cartoonish style
-- No background (use solid white or a single plain color)
-- Bold, high-contrast details
-- The overall tone should be fun/whimsical/cute/modern
-- Make the image easy to cut out, focusing on the main subject only
-`;
+Sticker illustration of a [INSERT_USER_PROMPT] with:
+• A thick white outline surrounding the entire design
+• Bright, vibrant colors that pop
+• A simplified, cartoonish style
+• A fun, whimsical, modern, cute tone
+• Bold, high-contrast details
+• Focus on the main subject only, making it easy to cut out
+• No background: solid white or transparent only
 
+Absolutely DO NOT include:
+• No text, logos, brand names, or watermarks
+• No color swatches, color bars, or palette references
+• No rulers, cutting mats, measurement lines, or design tool interfaces
+• No mockups, no multi-sticker sheets, no other objects in the scene
+• No shadows or reflections on any surface
+• No additional decorative shapes or backgrounds
+
+Goal:
+Produce exactly one single, die-cut sticker design for ChaosStickers.
+Only the main subject + thick white border + plain background.
+Nothing else. No environment. No design references or materials.
+`;
 
 // Simple in-memory cache to prevent duplicate requests
 const requestCache = new Map<string, { imageUrl: string; timestamp: number }>();
@@ -40,7 +54,7 @@ export const generateImageController: RequestHandler = async (req, res) => {
     }
     
     // Combine the prefix with the user's prompt
-    const enhancedPrompt = PROMPT_PREFIX.replace('[INSERT USER PROMPT]', prompt);
+    const enhancedPrompt = PROMPT_PREFIX.replace('[INSERT_USER_PROMPT]', prompt);
     
     const imageUrl = await generateImage(enhancedPrompt);
     
