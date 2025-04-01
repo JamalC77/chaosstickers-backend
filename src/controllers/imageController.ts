@@ -1,13 +1,13 @@
 import { RequestHandler } from 'express';
-import { generateImage } from '../services/openAiService';
-import { saveGeneratedImage, getRecentGeneratedImages, getUserGeneratedImages } from '../services/databaseService';
+import { generateImage } from '../services/googleGenAIService';
+import { saveGeneratedImage, getRecentGeneratedImages, getUserGeneratedImages, getImageById, saveImageWithRemovedBackground } from '../services/databaseService';
+import { removeBackground } from '../services/backgroundRemovalService';
 
 // Standard prefix to add to all image generation requests
 // Filename: chaosStickersPrompt.js
 // Filename: singleStickerPrompt.js
 
 const PROMPT_PREFIX = `
-This is for a service called ChaosStickers.
 Sticker illustration of a [INSERT_USER_PROMPT] with:
 • A thick white outline surrounding the entire design
 • Bright, vibrant colors that pop
@@ -15,23 +15,16 @@ Sticker illustration of a [INSERT_USER_PROMPT] with:
 • A fun, whimsical, modern, cute tone
 • Bold, high-contrast details
 • Focus on the main subject only, making it easy to cut out
-• No background: solid white or transparent only
+• IMPORTANT: The background must be transparent.
+
 
 Absolutely DO NOT include:
 • No text, logos, brand names, or watermarks
-• No color swatches, color bars, or palette references
-• No rulers, cutting mats, measurement lines, or design tool interfaces
-• No mockups, no multi-sticker sheets, no other objects in the scene
-• No shadows or reflections on any surface
 • No additional decorative shapes or backgrounds
-
-Goal:
-Produce exactly one single, die-cut sticker design for ChaosStickers.
-Only the main subject + thick white border + plain background.
-Nothing else. No environment. No design references or materials.
 `;
 
 // Simple in-memory cache to prevent duplicate requests
+// Note: Caching ImgBB URLs should be fine, as they are regular strings.
 const requestCache = new Map<string, { imageUrl: string; timestamp: number }>();
 const CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
 
@@ -43,31 +36,43 @@ export const generateImageController: RequestHandler = async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // Check if we have a cached result for this prompt
     const cacheKey = prompt.trim().toLowerCase();
     const cachedResult = requestCache.get(cacheKey);
     
-    // If we have a valid cached result, return it
     if (!regenerate && cachedResult && Date.now() - cachedResult.timestamp < CACHE_TIMEOUT) {
-      console.log('Returning cached image result for prompt:', prompt);
+      console.log('Returning cached background-removed image result (ImgBB URL) for prompt:', prompt);
       return res.status(200).json({ imageUrl: cachedResult.imageUrl });
     }
     
-    // Combine the prefix with the user's prompt
     const enhancedPrompt = PROMPT_PREFIX.replace('[INSERT_USER_PROMPT]', prompt);
     
-    const imageUrl = await generateImage(enhancedPrompt);
+    // 1. Generate image using the Google service (returns base64)
+    const base64ImageData = await generateImage(enhancedPrompt);
+    console.log(`[generateImageController] Image generated (base64 received)`);
+
+    // 2. Convert base64 to Buffer
+    const imageBuffer = Buffer.from(base64ImageData, 'base64');
+
+    // 3. Remove background and upload transparent result to ImgBB
+    // The removeBackground service now handles the ImgBB upload internally
+    const finalImageUrl = await removeBackground(imageBuffer);
+    console.log(`[generateImageController] Background removed and uploaded to ImgBB: ${finalImageUrl}`);
     
-    // Save the generated image to database with optional userId
-    await saveGeneratedImage(prompt, imageUrl, userId);
+    // 4. Save the final ImgBB URL (transparent image) to database
+    const savedImage = await saveGeneratedImage(prompt, finalImageUrl, userId || undefined);
+    console.log(`[generateImageController] Final ImgBB URL saved to DB (ID: ${savedImage.id})`);
     
-    // Cache the result
-    requestCache.set(cacheKey, { imageUrl, timestamp: Date.now() });
+    // 5. Cache the final ImgBB URL (transparent image)
+    requestCache.set(cacheKey, { imageUrl: finalImageUrl, timestamp: Date.now() });
     
-    return res.status(200).json({ imageUrl });
+    return res.status(200).json({ 
+      imageUrl: finalImageUrl, // Return the final ImgBB URL
+      id: savedImage.id.toString() 
+    });
   } catch (error) {
     console.error('Error in generateImageController:', error);
-    return res.status(500).json({ error: 'Failed to generate image' });
+    const errorMessage = error instanceof Error ? error.message : 'Failed to generate image';
+    return res.status(500).json({ error: errorMessage });
   }
 }
 
@@ -107,5 +112,44 @@ export const getUserImagesController: RequestHandler = async (req, res) => {
   } catch (error) {
     console.error('Error in getUserImagesController:', error);
     return res.status(500).json({ error: 'Failed to retrieve user images' });
+  }
+}
+
+export const removeBackgroundController: RequestHandler = async (req, res) => {
+  try {
+    const { imageId } = req.body;
+
+    if (!imageId) {
+      return res.status(400).json({ error: 'Image ID is required' });
+    }
+
+    // Get the image from the database
+    const image = await getImageById(imageId);
+    
+    if (!image) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+
+    // Check if background is already removed
+    if ('hasRemovedBackground' in image && image.hasRemovedBackground && 'noBackgroundUrl' in image && image.noBackgroundUrl) {
+      return res.status(200).json({ 
+        imageUrl: image.noBackgroundUrl,
+        message: 'Background already removed for this image'
+      });
+    }
+
+    // Process the image to remove background
+    const noBackgroundUrl = await removeBackground(image.imageUrl);
+    
+    // Save the processed image URL to the database
+    await saveImageWithRemovedBackground(imageId, noBackgroundUrl);
+    
+    return res.status(200).json({ 
+      imageUrl: noBackgroundUrl,
+      message: 'Background removed successfully'
+    });
+  } catch (error) {
+    console.error('Error in removeBackgroundController:', error);
+    return res.status(500).json({ error: 'Failed to remove background' });
   }
 } 

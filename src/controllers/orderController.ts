@@ -1,8 +1,9 @@
 import { RequestHandler } from 'express';
 import { createProduct, createOrder, getOrderStatus, getAvailableStickerProducts, getShopInfo } from '../services/printifyService';
-import { prisma } from '../server';
-import { generateImage } from '../services/openAiService';
+import { prisma } from '../server'; // <-- Restore Prisma import
+import { generateImage } from '../services/googleGenAIService';
 import { saveGeneratedImage } from '../services/databaseService';
+import { removeBackground } from '../services/backgroundRemovalService';
 
 export const createOrderController: RequestHandler = async (req, res) => {
   try {
@@ -130,8 +131,7 @@ export const getOrderStatusController: RequestHandler = async (req, res) => {
           status: printifyStatus
         }
       });
-      
-      order.status = printifyStatus;
+      order.status = printifyStatus; // Update actual order status
     }
     
     return res.status(200).json({ order });
@@ -176,6 +176,7 @@ export const testPrintifyIntegrationController: RequestHandler = async (req, res
       console.log('Order created with ID:', printifyOrderId);
 
       // Step 3: Create the order record in our database
+      /* // <-- Comment out Prisma usage
       const order = await prisma.order.create({
         data: {
           userId: parseInt(userId),
@@ -194,9 +195,18 @@ export const testPrintifyIntegrationController: RequestHandler = async (req, res
           items: true,
         },
       });
+      */ // <-- End comment
+      const mockOrder = { // Simulate order data
+          id: Date.now(),
+          userId: parseInt(userId),
+          printifyOrderId,
+          stripePaymentId: 'test-payment-id-' + Date.now(),
+          status: 'pending',
+          items: [{ productId, quantity: 1, imageUrl: testImage }]
+      };
 
       return res.status(200).json({ 
-        order,
+        order: mockOrder, // Return mock data
         message: 'Test order created successfully',
         note: printifyOrderId.startsWith('mock') 
           ? 'This was a mock order (Printify API was not used)' 
@@ -613,75 +623,79 @@ export const createMockOrderController: RequestHandler = async (req, res) => {
 };
 
 /**
- * Generate an image using OpenAI and use it to create a product in Printify
+ * Generate an image, remove its background, upload transparent version to ImgBB, 
+ * and use it to create a product in Printify
  */
 export const generateImageAndCreateProductController: RequestHandler = async (req, res) => {
+  const { prompt, userId = null } = req.body; // Allow optional userId
+
+  if (!prompt) {
+    return res.status(400).json({ error: 'Prompt is required' });
+  }
+
+  // Simple hardcoded prefix for testing (replace if needed)
+  const PROMPT_PREFIX = `
+    This is for a service called ChaosStickers.
+    Sticker illustration of a [INSERT_USER_PROMPT] with:
+    • A thick white outline surrounding the entire design
+    • Bright, vibrant colors that pop
+    • A simplified, cartoonish style
+    • A fun, whimsical, modern, cute tone
+    • Bold, high-contrast details
+    • Focus on the main subject only, making it easy to cut out
+    • No background: solid white or transparent only
+
+    Absolutely DO NOT include:
+    • No text, logos, brand names, or watermarks
+    • No color swatches, color bars, or palette references
+    • No rulers, cutting mats, measurement lines, or design tool interfaces
+    • No mockups, no multi-sticker sheets, no other objects in the scene
+    • No shadows or reflections on any surface
+    • No additional decorative shapes or backgrounds
+
+    Goal:
+    Produce exactly one single, die-cut sticker design for ChaosStickers.
+    Only the main subject + thick white border + plain background.
+    Nothing else. No environment. No design references or materials.
+  `;
+  const enhancedPrompt = PROMPT_PREFIX.replace('[INSERT_USER_PROMPT]', prompt);
+
   try {
-    const { prompt, userId } = req.body;
+    console.log(`[generateImageAndCreateProductController] Generating image for prompt: ${prompt}`);
+    // 1. Generate image using the Google service (returns base64)
+    const base64ImageData = await generateImage(enhancedPrompt);
+    console.log(`[generateImageAndCreateProductController] Image generated (base64 received)`);
+    
+    // 2. Convert base64 to Buffer
+    const imageBuffer = Buffer.from(base64ImageData, 'base64');
+    
+    // 3. Remove background and upload transparent result to ImgBB
+    const finalImageUrl = await removeBackground(imageBuffer);
+    console.log(`[generateImageAndCreateProductController] Background removed and uploaded to ImgBB: ${finalImageUrl}`);
 
-    if (!prompt) {
-      return res.status(400).json({ error: 'Prompt is required' });
-    }
+    // 4. Save the final ImgBB URL (transparent image) to the database
+    const savedImage = await saveGeneratedImage(prompt, finalImageUrl, userId || undefined);
+    console.log(`[generateImageAndCreateProductController] Final ImgBB URL saved to DB (ID: ${savedImage.id})`);
 
-    console.log('Generating image with prompt:', prompt);
+    // 5. Create a product in Printify using the final ImgBB URL
+    console.log(`[generateImageAndCreateProductController] Creating Printify product with final ImgBB URL...`);
+    const productId = await createProduct(finalImageUrl);
+    console.log(`[generateImageAndCreateProductController] Printify product created (ID: ${productId})`);
 
-    // Step 1: Generate the image using OpenAI
-    const enhancedPrompt = `
-      This is for a service called ChaosStickers.
-      Sticker illustration of a ${prompt} with:
-      • A thick white outline surrounding the entire design
-      • Bright, vibrant colors that pop
-      • A simplified, cartoonish style
-      • A fun, whimsical, modern, cute tone
-      • Bold, high-contrast details
-      • Focus on the main subject only, making it easy to cut out
-      • No background: solid white or transparent only
-      
-      Absolutely DO NOT include:
-      • No text, logos, brand names, or watermarks
-      • No color swatches, color bars, or palette references
-      • No rulers, cutting mats, measurement lines, or design tool interfaces
-      • No mockups, no multi-sticker sheets, no other objects in the scene
-      • No shadows or reflections on any surface
-      • No additional decorative shapes or backgrounds
-    `;
-
-    const imageUrl = await generateImage(enhancedPrompt);
-    console.log('Image generated successfully, URL:', imageUrl);
-
-    // Step 2: Save the generated image to the database
-    if (userId) {
-      await saveGeneratedImage(prompt, imageUrl, userId);
-    } else {
-      await saveGeneratedImage(prompt, imageUrl);
-    }
-
-    // Step 3: Use the generated image to create a product in Printify
-    let productId;
-    let productResult;
-    try {
-      console.log('Creating Printify product with generated image');
-      productId = await createProduct(imageUrl);
-      productResult = { id: productId, success: true };
-    } catch (error) {
-      console.error('Error creating product with Printify:', error);
-      productResult = { 
-        error: true, 
-        message: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-
-    return res.status(200).json({
+    return res.status(200).json({ 
       success: true,
-      imageUrl,
-      product: productResult,
-      message: 'Image generated and product created successfully'
+      message: 'Image generated, background removed, uploaded, and product created successfully',
+      imageUrl: finalImageUrl, // Return the final ImgBB URL
+      imageId: savedImage.id.toString(),
+      printifyProductId: productId,
     });
+
   } catch (error) {
     console.error('Error in generateImageAndCreateProductController:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to generate image and create product';
     return res.status(500).json({ 
-      error: 'Failed to generate image and create product',
-      message: error instanceof Error ? error.message : 'Unknown error'
+        error: 'Failed to generate image and create product',
+        details: errorMessage
     });
   }
 }; 

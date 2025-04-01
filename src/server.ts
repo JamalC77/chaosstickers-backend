@@ -1,3 +1,14 @@
+// Pre-load sharp to potentially resolve runtime loading conflicts
+console.log('Pre-loading sharp...');
+try {
+  require('sharp');
+  console.log('Sharp pre-loaded successfully.');
+} catch (err) {
+  console.error('ERROR pre-loading sharp:', err);
+  // Exit if sharp cannot be loaded even here
+  process.exit(1); 
+}
+
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -36,5 +47,6 @@ app.listen(PORT, () => {
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
   await prisma.$disconnect();
+  console.log('Shutting down server...');
   process.exit(0);
 }); 

@@ -47,9 +47,11 @@ model OrderItem {
 }
 
 model GeneratedImage {
-  id        Int      @id @default(autoincrement())
-  prompt    String
-  imageUrl  String
-  userId    String?  // Changed to String for client-side UUID
-  createdAt DateTime @default(now())
+  id                  Int      @id @default(autoincrement())
+  prompt              String
+  imageUrl            String
+  userId              String?  // Changed to String for client-side UUID
+  noBackgroundUrl     String?  // URL for the image with background removed
+  hasRemovedBackground Boolean  @default(false) // Flag to indicate if background was removed
+  createdAt           DateTime @default(now())
 }

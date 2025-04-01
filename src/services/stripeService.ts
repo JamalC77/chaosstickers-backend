@@ -10,13 +10,24 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 interface PaymentItem {
   imageUrl: string;
   quantity: number;
+  removeBackground?: boolean;
 }
 
 export async function createPaymentIntent(items: PaymentItem[]): Promise<string> {
   try {
     // For now, we'll use a simple pricing model
     // In a real application, you would calculate the price based on products
-    const amount = items.reduce((total, item) => total + item.quantity * 1000, 0); // $10.00 per item
+    let amount = items.reduce((total, item) => {
+      // Base price of $10.00 per item
+      let itemPrice = item.quantity * 1000;
+      
+      // Add $1.00 for background removal if requested
+      if (item.removeBackground) {
+        itemPrice += 100;
+      }
+      
+      return total + itemPrice;
+    }, 0);
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
