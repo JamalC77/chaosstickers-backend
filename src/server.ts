@@ -13,6 +13,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
+import { stripeWebhookHandler } from './controllers/webhookController'; // Import webhook handler
 
 // Import routes
 import routes from './routes';
@@ -29,6 +30,12 @@ export const prisma = new PrismaClient();
 
 // Middlewares
 app.use(cors());
+
+// Use express.raw() for the webhook route BEFORE express.json()
+// This ensures Stripe receives the raw body for signature verification
+app.post('/api/webhook/stripe', express.raw({ type: 'application/json' }), stripeWebhookHandler);
+
+// Use express.json() for other routes
 app.use(express.json());
 
 // Health check endpoint

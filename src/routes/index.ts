@@ -4,6 +4,7 @@ import express from 'express';
 import imageRoutes from './imageRoutes';
 import orderRoutes from './orderRoutes';
 import paymentRoutes from './paymentRoutes';
+import designRoutes from './designRoutes';
 
 const router = express.Router();
 
@@ -11,5 +12,6 @@ const router = express.Router();
 router.use('/generate-image', imageRoutes);
 router.use('/order', orderRoutes);
 router.use('/payment', paymentRoutes);
+router.use('/designs', designRoutes);
 
 export default router; 

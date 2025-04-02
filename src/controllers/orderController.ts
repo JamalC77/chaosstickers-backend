@@ -1,25 +1,49 @@
 import { RequestHandler } from 'express';
 import { createProduct, createOrder, getOrderStatus, getAvailableStickerProducts, getShopInfo } from '../services/printifyService';
-import { prisma } from '../server'; // <-- Restore Prisma import
+import { prisma } from '../server'; // Import prisma client instance
+import { Prisma } from '@prisma/client';
 import { generateImage } from '../services/googleGenAIService';
 import { saveGeneratedImage } from '../services/databaseService';
 import { removeBackground } from '../services/backgroundRemovalService';
+import Stripe from 'stripe'; // Import Stripe
+
+// Initialize Stripe client (reuse from webhookController or create instance)
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2023-10-16',
+});
 
 export const createOrderController: RequestHandler = async (req, res) => {
   try {
-    const { paymentId, shippingAddress, selectedImageUrl, userId } = req.body;
+    // Destructure new expected fields: productId, variantId, quantity
+    // Keep selectedImageUrl for DB storage
+    const { paymentId, shippingAddress, selectedImageUrl, userId, productId, variantId, quantity } = req.body;
 
-    if (!paymentId || !shippingAddress || !selectedImageUrl || !userId) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    // Update validation to check for new required fields
+    if (!paymentId || !shippingAddress || !selectedImageUrl || !userId || !productId || !variantId || !quantity) {
+      return res.status(400).json({ error: 'Missing required fields (paymentId, shippingAddress, selectedImageUrl, userId, productId, variantId, quantity)' });
     }
 
-    // Create a product in Printify with the selected image
-    const productId = await createProduct(selectedImageUrl);
+    // Ensure quantity and variantId are numbers
+    const parsedQuantity = parseInt(quantity);
+    const parsedVariantId = parseInt(variantId);
+    if (isNaN(parsedQuantity) || isNaN(parsedVariantId)) {
+      return res.status(400).json({ error: 'Invalid quantity or variantId format.'});
+    }
 
-    // Create an order in Printify
+    // Prepare line items for the existing product
+    const lineItems = [
+      {
+        product_id: productId, // Use productId from request
+        variant_id: parsedVariantId,
+        quantity: parsedQuantity,
+      },
+    ];
+
+    // Create an order in Printify using the updated service function
     const printifyOrderId = await createOrder({
-      selectedImageUrl,
+      line_items: lineItems,
       shippingAddress,
+      // external_id: `user-${userId}-payment-${paymentId}` // Optional
     });
 
     // Create the order in our database
@@ -31,10 +55,11 @@ export const createOrderController: RequestHandler = async (req, res) => {
         status: 'pending',
         items: {
           create: {
-            productId,
-            quantity: 1,
+            printifyProductId: productId,          // Correct field name (String)
+            printifyVariantId: parsedVariantId,    // Correct field name (Int)
+            quantity: parsedQuantity,
             imageUrl: selectedImageUrl,
-          },
+          } as Prisma.OrderItemUncheckedCreateWithoutOrderInput,
         },
       },
       include: {
@@ -96,14 +121,16 @@ export const getOrderStatusController: RequestHandler = async (req, res) => {
   try {
     const { orderId } = req.params;
     
-    if (!orderId) {
-      return res.status(400).json({ error: 'Missing order ID' });
+    // Validate orderId is a number
+    const numericOrderId = parseInt(orderId, 10);
+    if (isNaN(numericOrderId)) {
+      return res.status(400).json({ error: 'Invalid Order ID format. Must be a number.' });
     }
     
-    // Get the order from our database
+    // Get the order from our database using the validated ID
     const order = await prisma.order.findUnique({
       where: {
-        id: parseInt(orderId)
+        id: numericOrderId // Use the parsed numeric ID
       },
       include: {
         items: true
@@ -165,44 +192,32 @@ export const testPrintifyIntegrationController: RequestHandler = async (req, res
       const testImage = selectedImageUrl || 'https://cdn.pixabay.com/photo/2015/04/23/22/00/tree-736885_1280.jpg';
       console.log('Creating product with image:', testImage);
       
-      const productId = await createProduct(testImage);
-      console.log('Product created with ID:', productId);
+      // This test still needs createProduct
+      const productResult = await createProduct(testImage);
+      console.log('Product created:', productResult);
 
-      // Step 2: Create a test order using the product
+      // Step 2: Create a test order using the newly created product
+      // Update call to createOrder to use line_items
       const printifyOrderId = await createOrder({
-        selectedImageUrl: testImage,
+        line_items: [
+          {
+            product_id: productResult.productId,
+            variant_id: productResult.variantId,
+            quantity: 1
+          }
+        ],
         shippingAddress,
       });
       console.log('Order created with ID:', printifyOrderId);
 
-      // Step 3: Create the order record in our database
-      /* // <-- Comment out Prisma usage
-      const order = await prisma.order.create({
-        data: {
-          userId: parseInt(userId),
-          printifyOrderId,
-          stripePaymentId: 'test-payment-id-' + Date.now(),
-          status: 'pending',
-          items: {
-            create: {
-              productId,
-              quantity: 1,
-              imageUrl: testImage,
-            },
-          },
-        },
-        include: {
-          items: true,
-        },
-      });
-      */ // <-- End comment
-      const mockOrder = { // Simulate order data
+      // Step 3: Create the order record in our database (mocked section)
+      const mockOrder = {
           id: Date.now(),
           userId: parseInt(userId),
           printifyOrderId,
           stripePaymentId: 'test-payment-id-' + Date.now(),
           status: 'pending',
-          items: [{ productId, quantity: 1, imageUrl: testImage }]
+          items: [{ printifyProductId: productResult.productId, printifyVariantId: productResult.variantId, quantity: 1, imageUrl: testImage }]
       };
 
       return res.status(200).json({ 
@@ -525,10 +540,21 @@ export const testExternalOrderController: RequestHandler = async (req, res) => {
     }
 
     try {
-      // The createOrder function now creates external orders directly
+      // The createOrder function now requires line_items, 
+      // so this external order test needs mock product/variant IDs.
+      // It cannot directly call createOrder without them.
+      const mockProductId = 'mock-external-product-id';
+      const mockVariantId = 99999;
+
       const printifyOrderId = await createOrder({
-        selectedImageUrl: 'not-needed-for-external-orders',
         shippingAddress,
+        line_items: [
+            {
+                product_id: mockProductId,
+                variant_id: mockVariantId,
+                quantity: 1
+            }
+        ]
       });
 
       // Create the order in our database
@@ -540,10 +566,11 @@ export const testExternalOrderController: RequestHandler = async (req, res) => {
           status: 'pending',
           items: {
             create: {
-              productId: 'external-product',
+              printifyProductId: mockProductId,        // Correct field name (String)
+              printifyVariantId: mockVariantId,       // Correct field name (Int)
               quantity: 1,
               imageUrl: 'no-image-needed',
-            },
+            } as Prisma.OrderItemUncheckedCreateWithoutOrderInput,
           },
         },
         include: {
@@ -580,6 +607,7 @@ export const createMockOrderController: RequestHandler = async (req, res) => {
     // Generate mock IDs
     const mockPrintifyOrderId = `mock-printify-${Date.now()}`;
     const mockProductId = `mock-product-${Date.now()}`;
+    const mockVariantId = -1;
     
     console.log('Creating fully mocked order with:', {
       shippingAddress,
@@ -597,10 +625,11 @@ export const createMockOrderController: RequestHandler = async (req, res) => {
         status: 'pending',
         items: {
           create: {
-            productId: mockProductId,
+            printifyProductId: mockProductId,        // Correct field name (String)
+            printifyVariantId: mockVariantId, // Correct field name (Int)
             quantity: 1,
             imageUrl: selectedImageUrl,
-          },
+          } as Prisma.OrderItemUncheckedCreateWithoutOrderInput,
         },
       },
       include: {
@@ -679,15 +708,17 @@ export const generateImageAndCreateProductController: RequestHandler = async (re
 
     // 5. Create a product in Printify using the final ImgBB URL
     console.log(`[generateImageAndCreateProductController] Creating Printify product with final ImgBB URL...`);
-    const productId = await createProduct(finalImageUrl);
-    console.log(`[generateImageAndCreateProductController] Printify product created (ID: ${productId})`);
+    // This controller still needs createProduct
+    const { productId: printifyProductIdResult, variantId: printifyVariantIdResult } = await createProduct(finalImageUrl);
+    console.log(`[generateImageAndCreateProductController] Printify product created (ID: ${printifyProductIdResult}, Variant: ${printifyVariantIdResult})`);
 
     return res.status(200).json({ 
       success: true,
       message: 'Image generated, background removed, uploaded, and product created successfully',
       imageUrl: finalImageUrl, // Return the final ImgBB URL
       imageId: savedImage.id.toString(),
-      printifyProductId: productId,
+      printifyProductId: printifyProductIdResult,
+      printifyVariantId: printifyVariantIdResult,
     });
 
   } catch (error) {
@@ -698,4 +729,74 @@ export const generateImageAndCreateProductController: RequestHandler = async (re
         details: errorMessage
     });
   }
-}; 
+};
+
+// --- NEW CONTROLLER for Confirmation Page ---
+export const confirmAndFetchOrderController: RequestHandler = async (req, res) => {
+  const { sessionId } = req.query;
+  const MAX_POLL_RETRIES = 7;
+  const POLL_DELAY = 3000; // milliseconds (increased from 1500)
+
+  if (!sessionId || typeof sessionId !== 'string') {
+    return res.status(400).json({ error: 'Missing or invalid session_id query parameter' });
+  }
+
+  try {
+    // 1. Retrieve the Stripe Checkout Session to get Payment Intent ID
+    console.log(`[Confirm] Fetching Stripe session: ${sessionId}`);
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : null;
+
+    if (!paymentIntentId) {
+      console.error(`[Confirm] No payment_intent found for session: ${sessionId}`);
+      return res.status(404).json({ error: 'Payment information not found for this session.' });
+    }
+    console.log(`[Confirm] Found Payment Intent ID: ${paymentIntentId}`);
+
+    // 2. Poll the database for the order created by the webhook
+    let order = null;
+    for (let i = 0; i < MAX_POLL_RETRIES; i++) {
+      console.log(`[Confirm] Polling DB for order with PI: ${paymentIntentId} (Attempt ${i + 1}/${MAX_POLL_RETRIES})`);
+      order = await prisma.order.findFirst({
+        where: { stripePaymentId: paymentIntentId },
+        include: {
+          items: true,
+          user: { select: { name: true, email: true } }
+        },
+      });
+
+      if (order) {
+        console.log(`[Confirm] Order found in DB: ${order.id}`);
+        break; // Exit loop if order is found
+      }
+
+      // If order not found and more retries left, wait
+      if (i < MAX_POLL_RETRIES - 1) {
+        console.log(`[Confirm] Order not found yet, waiting ${POLL_DELAY}ms...`);
+        await new Promise(resolve => setTimeout(resolve, POLL_DELAY));
+      }
+    }
+
+    // 3. Check if order was found after polling
+    if (!order) {
+      console.error(`[Confirm] Order with PI: ${paymentIntentId} not found after ${MAX_POLL_RETRIES} attempts.`);
+      return res.status(404).json({ error: 'Order processing is delayed or failed. Please check back later or contact support.' });
+    }
+
+    // 4. Return the found order details
+    console.log(`[Confirm] Returning order ${order.id} details.`);
+    return res.status(200).json({ order });
+
+  } catch (error: any) {
+    console.error(`[Confirm] Error fetching/confirming order for session ${sessionId}:`, error);
+    if (error.type === 'StripeInvalidRequestError') {
+      return res.status(404).json({ error: 'Invalid session ID provided.' });
+    }
+    return res.status(500).json({ error: 'Failed to retrieve order details' });
+  }
+};
+
+// Remove or comment out the old getOrderBySessionIdController if no longer needed
+// export const getOrderBySessionIdController: RequestHandler = async (req, res) => { ... };
+
+// ... rest of the file ... 

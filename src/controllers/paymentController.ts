@@ -1,30 +1,70 @@
 import { RequestHandler } from 'express';
-import { createPaymentIntent } from '../services/stripeService';
+import { createCheckoutSession } from '../services/stripeService';
 
 interface PaymentItem {
   imageUrl: string;
   quantity: number;
-  imageId?: string;
+  imageId?: string; // Keep for potential future use, though not used in current flow
   removeBackground?: boolean;
 }
 
-export const createPaymentIntentController: RequestHandler = async (req, res) => {
-  try {
-    const { items } = req.body;
+// Define an interface for the expected request body
+interface CreatePaymentRequestBody {
+  items: PaymentItem[];
+  shippingAddress: { // Match the structure sent from the frontend
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    country: string;
+    region: string;
+    address1: string;
+    address2?: string;
+    city: string;
+    zip: string;
+  };
+  userId: number; // Keep userId if needed for your application logic
+}
 
+// Rename controller to reflect its purpose
+export const createCheckoutSessionController: RequestHandler = async (req, res) => {
+  try {
+    // Explicitly type the request body
+    const { items, shippingAddress, userId } = req.body as CreatePaymentRequestBody;
+
+    // Basic Validations (can be kept or enhanced)
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Items are required and must be a non-empty array' });
     }
+    if (!shippingAddress) {
+        return res.status(400).json({ error: 'Shipping address is required' });
+    }
+    if (!shippingAddress.first_name || !shippingAddress.last_name || !shippingAddress.email || 
+        !shippingAddress.phone || !shippingAddress.country || !shippingAddress.region || 
+        !shippingAddress.address1 || !shippingAddress.city || !shippingAddress.zip) {
+      return res.status(400).json({ error: 'Missing required shipping address fields' });
+    }
+    if (userId === undefined) {
+        return res.status(400).json({ error: 'User ID is required' });
+    }
 
-    const clientSecret = await createPaymentIntent(items);
+    // Call the new service function, passing userId
+    const { sessionId } = await createCheckoutSession(items, shippingAddress, userId);
     
-    return res.status(200).json({ clientSecret });
+    console.log(`Checkout session created for userId: ${userId}, sessionId: ${sessionId}`);
+
+    // Return the session ID to the frontend
+    return res.status(200).json({ sessionId });
+
   } catch (error) {
-    console.error('Error in createPaymentIntentController:', error);
-    return res.status(500).json({ error: 'Failed to create payment intent' });
+    console.error('Error in createCheckoutSessionController:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to create checkout session';
+    return res.status(500).json({ error: errorMessage });
   }
 };
 
+// Remove the backgroundRemovalPaymentController as it's no longer needed
+/*
 export const backgroundRemovalPaymentController: RequestHandler = async (req, res) => {
   try {
     const { imageId } = req.body;
@@ -40,8 +80,10 @@ export const backgroundRemovalPaymentController: RequestHandler = async (req, re
       imageId,
       removeBackground: true
     }];
-
-    const clientSecret = await createPaymentIntent(items);
+    
+    // NOTE: This previous logic didn't pass shipping details, which is incorrect.
+    // The new approach integrates this cost into the main payment intent.
+    const clientSecret = await createPaymentIntent(items, {} as any); // Placeholder, needs proper shipping
     
     return res.status(200).json({ 
       clientSecret,
@@ -51,4 +93,5 @@ export const backgroundRemovalPaymentController: RequestHandler = async (req, re
     console.error('Error in backgroundRemovalPaymentController:', error);
     return res.status(500).json({ error: 'Failed to create payment intent for background removal' });
   }
-}; 
+};
+*/ 

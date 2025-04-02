@@ -23,27 +23,38 @@ model User {
 }
 
 model Order {
-  id               Int         @id @default(autoincrement())
-  userId           Int
-  user             User        @relation(fields: [userId], references: [id])
-  printifyOrderId  String?
-  stripePaymentId  String?
-  status           String      @default("pending") // e.g. "pending", "processing", "shipped"
-  items            OrderItem[]
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  id                Int         @id @default(autoincrement())
+  userId            Int
+  user              User        @relation(fields: [userId], references: [id])
+  printifyOrderId   String?
+  stripePaymentId   String?     @unique // Ensure Stripe Payment IDs are unique
+  status            String      @default("pending")
+  // Add shipping details directly to the order for easier access
+  shippingFirstName String?
+  shippingLastName  String?
+  shippingEmail     String?
+  shippingPhone     String?
+  shippingCountry   String?
+  shippingRegion    String?
+  shippingAddress1  String?
+  shippingAddress2  String?
+  shippingCity      String?
+  shippingZip       String?
+  items             OrderItem[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 }
 
 model OrderItem {
-  id        Int      @id @default(autoincrement())
-  orderId   Int
-  order     Order    @relation(fields: [orderId], references: [id])
-  productId String   // from Printify
-  variantId String?
-  quantity  Int      @default(1)
-  imageUrl  String   // the AI design
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  orderId           Int
+  order             Order    @relation(fields: [orderId], references: [id])
+  printifyProductId String   // Renamed from productId
+  printifyVariantId Int      // Added: Specific Printify variant ID used
+  quantity          Int      @default(1)
+  imageUrl          String   // the AI design URL (e.g., from ImgBB)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model GeneratedImage {

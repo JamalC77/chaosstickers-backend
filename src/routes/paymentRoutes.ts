@@ -1,9 +1,8 @@
 import express from 'express';
-import { createPaymentIntentController, backgroundRemovalPaymentController } from '../controllers/paymentController';
+import { createCheckoutSessionController } from '../controllers/paymentController';
 
 const router = express.Router();
 
-router.post('/create-payment-intent', createPaymentIntentController);
-router.post('/background-removal-payment', backgroundRemovalPaymentController);
+router.post('/create-checkout-session', createCheckoutSessionController);
 
 export default router; 

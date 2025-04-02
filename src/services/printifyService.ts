@@ -22,8 +22,16 @@ interface ShippingAddress {
 }
 
 interface OrderDetails {
-  selectedImageUrl: string;
   shippingAddress: ShippingAddress;
+  external_id?: string;
+  label?: string;
+  line_items: ExistingProductLineItem[];
+}
+
+interface ExistingProductLineItem {
+  product_id: string;
+  variant_id: number;
+  quantity: number;
 }
 
 interface PrintifyVariant {
@@ -33,17 +41,20 @@ interface PrintifyVariant {
 }
 
 interface PrintifyLineItem {
-  product_id: string;
   variant_id: number;
   quantity: number;
+  print_provider_id?: number; // Make optional, but required by createOrder endpoint
 }
 
 interface PrintifyOrder {
   external_id?: string;
-  line_items: PrintifyLineItem[];
+  label?: string;
+  line_items: { product_id: string; variant_id: number; quantity: number }[];
   shipping_method: number;
-  shipping_address: ShippingAddress;
+  is_printify_express?: boolean;
+  is_economy_shipping?: boolean;
   send_shipping_notification: boolean;
+  address_to: ShippingAddress;
 }
 
 interface PrintifyImageUploadResponse {
@@ -231,75 +242,94 @@ export async function getAvailableStickerProducts() {
 /**
  * Create a Kiss-Cut Vinyl Sticker product in your Printify shop using a supplied image URL
  * and only US-based print providers.
+ * Returns an object containing the Printify product ID, selected variant ID, and provider ID.
  */
-export async function createProduct(imageUrl: string): Promise<string> {
+export async function createProduct(imageUrl: string): Promise<{ productId: string; variantId: number; providerId: number }> {
   try {
     console.log('Attempting to create a "Kiss-Cut Vinyl Sticker" product...');
     // 1. Upload the image to Printify
     const imageId = await uploadImageToPrintify(imageUrl);
 
-    // 2. Fetch the ID of the "Kiss-Cut Vinyl Sticker" blueprint
+    // 2. Define the target blueprint and provider
     const stickerBlueprintId = 1268;
+    const printProviderId = 215; // Capture the provider ID used
+    console.log(`Using Blueprint ID: ${stickerBlueprintId}, Provider ID: ${printProviderId}`);
 
-    // 3. Get a US-based print provider for that blueprint
-    const printProviderId = 215;
-
-    // 4. Get the first variant for that blueprint + provider
+    // 3. Get variants for the chosen blueprint and provider
     const variantsEndpoint = `/catalog/blueprints/${stickerBlueprintId}/print_providers/${printProviderId}/variants.json`;
-    const response = await printifyRequest(variantsEndpoint, 'GET');
+    const variantsResponse = await printifyRequest(variantsEndpoint, 'GET');
 
-    const selectedVariant = response.variants[0]; // Just pick the first variant
-    console.log(
-      `Using variant "${selectedVariant.title}" (ID: ${selectedVariant.id}) for the new sticker.`
-    );
+    if (!variantsResponse || !Array.isArray(variantsResponse.variants) || variantsResponse.variants.length === 0) {
+      throw new Error(`No variants found for blueprint ${stickerBlueprintId} and provider ${printProviderId}`);
+    }
 
-    // 5. Construct product data for the POST request
-    const currentShopId = process.env.PRINTIFY_SHOP_ID || SHOP_ID;
-    const productEndpoint = `shops/${currentShopId}/products.json`;
+    // 4. Select a variant (e.g., the first one, or based on size/criteria)
+    // For simplicity, let's pick the first variant ID.
+    // In production, you might want logic to select a specific size (e.g., "2x2").
+    const selectedVariant = variantsResponse.variants[0];
+    const selectedVariantId = selectedVariant.id;
+    console.log(`Selected Variant: ${selectedVariant.title} (ID: ${selectedVariantId})`);
 
-    const productData = {
-      title: `Kiss-Cut Vinyl Sticker - ${new Date().toISOString().split('T')[0]}`,
-      description: 'Custom Kiss-Cut Vinyl Sticker created via API (US-based provider)',
+    if (!selectedVariantId || typeof selectedVariantId !== 'number') {
+        throw new Error('Could not determine a valid variant ID.');
+    }
+
+    // 5. Define the product payload
+    const productPayload = {
+      title: `Custom Sticker - ${Date.now()}`,
+      description: 'User-generated custom sticker',
       blueprint_id: stickerBlueprintId,
       print_provider_id: printProviderId,
       variants: [
         {
-          id: selectedVariant.id,
-          price: 799, // in cents => $7.99
+          id: selectedVariantId,
+          price: 350, // Set your base price in cents
           is_enabled: true,
         },
       ],
-      print_areas: {
-        front: {
-          variant_ids: [selectedVariant.id],
+      print_areas: [
+        {
+          variant_ids: [selectedVariantId],
           placeholders: [
             {
-              position: 'front',
+              position: 'front', // Adjust if blueprint uses different placeholders
               images: [
                 {
                   id: imageId,
                   x: 0.5,
                   y: 0.5,
-                  scale: 0.8,
+                  scale: 1,
                   angle: 0,
                 },
               ],
             },
           ],
         },
-      },
+      ],
     };
 
-    console.log('Creating product with data:', JSON.stringify(productData, null, 2));
-    const product = await printifyRequest(productEndpoint, 'POST', productData);
+    // 6. Create the product in Printify
+    const productEndpoint = `/shops/${SHOP_ID}/products.json`;
+    console.log('Submitting product creation payload:', JSON.stringify(productPayload, null, 2));
+    const productResponse = await printifyRequest(productEndpoint, 'POST', productPayload);
+    console.log('Product creation response:', productResponse);
 
-    console.log('Product created successfully:', product);
-    return product.id;
+    if (!productResponse || !productResponse.id) {
+      throw new Error('Failed to create product or received invalid response');
+    }
+
+    console.log(`Product created successfully: ID ${productResponse.id}, Variant ID ${selectedVariantId}, Provider ID ${printProviderId}`);
+    // Return all three IDs
+    return {
+        productId: productResponse.id,
+        variantId: selectedVariantId,
+        providerId: printProviderId
+    };
+
   } catch (error) {
-    console.error('Error in createProduct:', error);
-    throw new Error(
-      `Failed to create product: ${error instanceof Error ? error.message : String(error)}`
-    );
+    console.error('Error creating Printify product:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to create Printify product: ${errorMessage}`);
   }
 }
 
@@ -308,58 +338,57 @@ export async function createProduct(imageUrl: string): Promise<string> {
  */
 export async function createOrder(orderDetails: OrderDetails): Promise<string> {
   try {
-    const currentShopId = process.env.PRINTIFY_SHOP_ID || SHOP_ID;
-
-    // 1. Try creating a real product
-    let productId: string;
-    try {
-      productId = await createProduct(orderDetails.selectedImageUrl);
-      // If something weird returns
-      if (productId.startsWith('mock-')) {
-        throw new Error('Using mock product flow');
-      }
-    } catch (error) {
-      // If product creation fails, fallback to a mock ID
-      productId = `mock-product-${Date.now()}`;
-      console.log('Using mock product flow with ID:', productId);
+    if (!SHOP_ID) {
+      throw new Error('Printify Shop ID is not configured.');
+    }
+    if (!PRINTIFY_API_KEY) {
+      throw new Error('Printify API Key is not configured.');
     }
 
-    // 2. Create the order with that product
-    try {
-      const orderEndpoint = `shops/${currentShopId}/orders.json`;
+    console.log('[createOrder] Creating Printify order for existing product with details:', JSON.stringify(orderDetails, null, 2));
 
-      const orderData = {
-        external_id: `order-${Date.now()}`,
-        shipping_method: 1,
-        send_shipping_notification: false,
-        shipping_address: orderDetails.shippingAddress,
-        line_items: [
-          {
-            product_id: productId,
-            variant_id: 1, // Hardcoding the first variant ID for simplicity
-            quantity: 1,
-          },
-        ],
-      };
-
-      console.log('Creating order with data:', JSON.stringify(orderData, null, 2));
-      const order = await printifyRequest(orderEndpoint, 'POST', orderData);
-
-      console.log('Order created successfully:', order);
-      return order.id;
-    } catch (error) {
-      console.error('Error creating order with Printify:', error);
-
-      // Fall back to a mock order ID for testing
-      const mockOrderId = `mock-order-${Date.now()}`;
-      console.log(`Using mock order ID: ${mockOrderId}`);
-      return mockOrderId;
+    // Validate line items are provided and not empty
+    if (!orderDetails.line_items || orderDetails.line_items.length === 0) {
+        throw new Error('Cannot create order with empty line items.');
     }
+
+    // Prepare the payload according to the API documentation
+    const printifyOrderPayload: PrintifyOrder = {
+      external_id: orderDetails.external_id,
+      label: orderDetails.label,
+      line_items: orderDetails.line_items.map(item => {
+          // Validate incoming item structure
+          if (!item.product_id || !item.variant_id || !item.quantity) {
+            console.error('[createOrder] Line item missing product_id, variant_id, or quantity:', item);
+            throw new Error('Invalid line item data provided.');
+          }
+          return {
+            product_id: item.product_id,
+            variant_id: item.variant_id,
+            quantity: item.quantity,
+          };
+      }),
+      shipping_method: 1,
+      send_shipping_notification: true,
+      address_to: orderDetails.shippingAddress,
+    };
+
+    // Submit the order to Printify
+    const orderEndpoint = `/shops/${SHOP_ID}/orders.json`;
+    console.log('[createOrder] Submitting final payload to Printify:', JSON.stringify(printifyOrderPayload, null, 2));
+    const orderResponse = await printifyRequest(orderEndpoint, 'POST', printifyOrderPayload);
+
+    console.log('Printify order submission response:', orderResponse);
+
+    if (!orderResponse || !orderResponse.id) {
+      throw new Error('Failed to create Printify order or received invalid response.');
+    }
+
+    return orderResponse.id;
   } catch (error) {
-    console.error('Error in createOrder:', error);
-    throw new Error(
-      `Failed to create order: ${error instanceof Error ? error.message : String(error)}`
-    );
+    console.error('Error creating Printify order:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to create Printify order: ${errorMessage}`);
   }
 }
 

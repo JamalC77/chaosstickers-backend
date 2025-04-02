@@ -1,9 +1,10 @@
 import express from 'express';
-import { createOrderController, printifyWebhookController, getOrderStatusController, testPrintifyIntegrationController, debugPrintifyController, testProductCreationController, getPrintifyCatalogController, testBasicPrintifyAccessController, testExternalOrderController, createMockOrderController, generateImageAndCreateProductController } from '../controllers/orderController';
+import { createOrderController, printifyWebhookController, getOrderStatusController, testPrintifyIntegrationController, debugPrintifyController, testProductCreationController, getPrintifyCatalogController, testBasicPrintifyAccessController, testExternalOrderController, createMockOrderController, generateImageAndCreateProductController, confirmAndFetchOrderController } from '../controllers/orderController';
 
 const router = express.Router();
 
 // Define specific routes first
+router.get('/confirm-and-fetch', confirmAndFetchOrderController);
 router.post('/', createOrderController);
 router.post('/test-printify', testPrintifyIntegrationController);
 router.post('/test-external', testExternalOrderController);
