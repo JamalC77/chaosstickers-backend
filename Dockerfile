@@ -32,6 +32,10 @@ COPY . .
 RUN npm run build
 # Or your specific build command if different
 
+# Copy Imgly assets for local serving
+# Copy from the current stage where npm install ran
+COPY node_modules/@imgly/background-removal-node/dist/*.{wasm,onnx} /app/assets/imgly/
+
 # Make port 3001 available to the world outside this container (adjust if needed)
 EXPOSE 3001
 
