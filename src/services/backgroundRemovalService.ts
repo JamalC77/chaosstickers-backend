@@ -68,6 +68,12 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
     console.log(`[backgroundRemovalService] Removing background using Imgly with input type: ${typeof inputForImgly}...`);
     // Use the Imgly library with the potentially normalized input (now possibly a file path)
     imageBlob = await imglyRemoveBackground(inputForImgly, {
+      debug: true, // Enable debug logging
+      model: 'small', // Try the smaller model
+      output: { 
+        // Specify output if needed, otherwise defaults are fine
+        format: 'image/png' // Keep default PNG output
+      }
       // config options if needed
     });
     console.log('[backgroundRemovalService] Background removal successful.');
