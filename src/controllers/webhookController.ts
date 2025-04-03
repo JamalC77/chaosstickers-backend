@@ -1,11 +1,16 @@
 import { RequestHandler } from 'express';
 import Stripe from 'stripe';
 // Import Prisma namespace and client
-import { PrismaClient, Prisma } from '@prisma/client'; 
+import { PrismaClient, Prisma } from '@prisma/client';
 import { prisma } from '../server'; // Assuming prisma client is exported from server.ts
 import { createProduct, createOrder } from '../services/printifyService';
 // Revert path for types import, assuming it's in src/types
-import { ShippingDetails } from '../types'; 
+import { ShippingDetails } from '../types';
+// Import Resend
+import { Resend } from 'resend';
+
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Ensure STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are in your .env file
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -180,21 +185,45 @@ export const stripeWebhookHandler: RequestHandler = async (req, res) => {
           return res.status(500).json({ error: `Webhook processing failed: Database error - ${dbError.message}` });
       }
 
-      // ** TODO: Send Confirmation Email **
-      console.log(`[Webhook ${eventId}] Placeholder: Send confirmation email for order ${order.id} to ${shippingAddress.email}`);
+      // ** Send Confirmation Email **
+      console.log(`[Webhook ${eventId}] Attempting to send confirmation email for order ${order.id} to ${shippingAddress.email}`);
+      try {
+        const orderLink = `https://chaos-stickers.com/orders/${order.id}`;
+        const emailHtml = `
+          <h1>Thanks for your Chaos Stickers order, ${shippingAddress.first_name}!</h1>
+          <p>Your order #${order.id} has been confirmed and is now being processed.</p>
+          <p>Sticker Image:</p>
+          <img src="${imageUrl}" alt="Your Sticker" width="100" /> 
+          <p>You can check the status of your order here:</p>
+          <a href="${orderLink}">${orderLink}</a>
+          <p>We'll notify you again when it ships.</p>
+        `;
+
+        await resend.emails.send({
+          from: 'orders@chaos-stickers.com', // Replace with your verified sending domain/email
+          to: shippingAddress.email,
+          subject: `Chaos Stickers Order Confirmation #${order.id}`,
+          html: emailHtml,
+        });
+        console.log(`[Webhook ${eventId}] Confirmation email sent successfully to ${shippingAddress.email}`);
+      } catch (emailError: any) {
+        // Log email sending failure but don't fail the webhook processing
+        console.error(`[Webhook ${eventId}] FAILED to send confirmation email to ${shippingAddress.email}:`, emailError);
+        // Optionally, add more robust error handling like queuing the email for retry
+      }
+      // ** End Send Confirmation Email **
 
       // Acknowledge successful processing
       console.log(`[Webhook ${eventId}] Processing completed successfully.`);
       return res.status(200).json({ received: true, orderId: order.id });
-
     } catch (error: any) {
-      // Catch unexpected errors during the processing steps (e.g., JSON parse error)
+      // Corrected catch block for unexpected errors during processing
       console.error(`[Webhook ${eventId}] Unexpected error during processing:`, error);
       return res.status(500).json({ error: `Webhook processing failed unexpectedly: ${error.message}` });
     }
   } else {
-    // Handle other event types or ignore
+    // Corrected handler for other event types
     console.log(`[Webhook] Received unhandled event type: ${event.type}`);
     return res.status(200).json({ received: true, message: `Unhandled event type: ${event.type}` });
   }
-}; 
+};
