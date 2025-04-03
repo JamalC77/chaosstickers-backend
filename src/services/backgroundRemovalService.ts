@@ -12,10 +12,18 @@ dotenv.config();
 const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
 
-// Ensure temp directory exists (optional, adjust path as needed)
-const TEMP_DIR = path.join(__dirname, '..\_temp_images'); // Store in project root/_temp_images
+// Ensure temp directory exists (using absolute path in container)
+const TEMP_DIR = '/app/temp_images'; // Use an absolute path
 if (!fs.existsSync(TEMP_DIR)) {
-  fs.mkdirSync(TEMP_DIR);
+  // Create recursively if needed, handle potential errors
+  try {
+    fs.mkdirSync(TEMP_DIR, { recursive: true }); 
+  } catch (err) {
+    console.error(`[backgroundRemovalService] Failed to create temp directory ${TEMP_DIR}:`, err);
+    // Decide if you want to throw or handle differently
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to create temporary directory: ${message}`);
+  }
 }
 
 /**
@@ -41,9 +49,14 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
       console.log(`[backgroundRemovalService] Normalization complete. Buffer size: ${processedInputBuffer.length} bytes.`);
 
       if (processedInputBuffer.length > 0) {
-          // Directly use the buffer for Imgly
-          inputForImgly = processedInputBuffer;
-          console.log(`[backgroundRemovalService] Using normalized buffer directly for Imgly.`);
+          // Save normalized buffer to file in the new TEMP_DIR
+          tempFilePath = path.join(TEMP_DIR, `normalized-${Date.now()}.png`);
+          console.log(`[backgroundRemovalService] Saving normalized buffer to: ${tempFilePath}`);
+          fs.writeFileSync(tempFilePath, processedInputBuffer);
+          
+          // Pass the direct file path string to Imgly
+          inputForImgly = tempFilePath; 
+          console.log(`[backgroundRemovalService] Using direct file path for Imgly: ${inputForImgly}`);
       } else {
           console.warn('[backgroundRemovalService] Warning: Normalized buffer size is 0.');
           throw new Error('Normalized image buffer is empty after sharp processing.');
