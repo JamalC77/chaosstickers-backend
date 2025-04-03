@@ -44,20 +44,19 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
 
   try {
     if (Buffer.isBuffer(inputImage)) {
-      console.log('[backgroundRemovalService] Input is buffer, SAVING DIRECTLY (bypassing sharp normalization for debug)...'); // <-- Modified log
-      // const processedInputBuffer = await sharp(inputImage).png().toBuffer(); // <-- Temporarily comment out sharp
-      const processedInputBuffer = inputImage; // <-- Use original buffer
-      console.log(`[backgroundRemovalService] Using original buffer. Buffer size: ${processedInputBuffer.length} bytes.`); // <-- Modified log
+      console.log('[backgroundRemovalService] Input is buffer, normalizing with sharp...'); // Re-enable sharp
+      const processedInputBuffer = await sharp(inputImage).png().toBuffer(); // Re-enable sharp
+      console.log(`[backgroundRemovalService] Normalization complete. Buffer size: ${processedInputBuffer.length} bytes.`);
 
-      // Ensure buffer isn't empty
+      // Ensure buffer isn't empty after sharp processing
       if (processedInputBuffer.length === 0) {
-         console.warn('[backgroundRemovalService] Warning: Input buffer size is 0.'); // <-- Modified log
-         throw new Error('Input image buffer is empty.'); // <-- Modified log
+         console.warn('[backgroundRemovalService] Warning: Normalized buffer size is 0 after sharp processing.');
+         throw new Error('Normalized image buffer is empty after sharp processing.');
       }
 
-      // Save original buffer to file
-      tempFilePath = path.join(TEMP_DIR, `original-${Date.now()}.png`); // <-- Changed filename slightly
-      console.log(`[backgroundRemovalService] Saving original buffer to: ${tempFilePath}`);
+      // Save normalized buffer to file
+      tempFilePath = path.join(TEMP_DIR, `normalized-${Date.now()}.png`); // <-- Back to normalized
+      console.log(`[backgroundRemovalService] Saving normalized buffer to: ${tempFilePath}`);
       try {
           fs.writeFileSync(tempFilePath, processedInputBuffer);
           console.log(`[backgroundRemovalService] File written successfully.`);
@@ -67,9 +66,10 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
           throw new Error(`Failed to write temporary image file: ${message}`);
       }
       
-      // Pass the direct file path string to Imgly
-      inputForImgly = tempFilePath; 
-      console.log(`[backgroundRemovalService] Using direct file path for Imgly: ${inputForImgly}`);
+      // Convert the file path to a file URL
+      const fileUrl = pathToFileURL(tempFilePath); // <-- Convert to file URL
+      inputForImgly = fileUrl.href; // <-- Pass the href string
+      console.log(`[backgroundRemovalService] Using file URL href for Imgly: ${inputForImgly}`); // <-- Log URL href
       
     } else {
       // If input is a URL string, pass it directly
@@ -86,7 +86,7 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
     // Use the Imgly library with the potentially normalized input (now possibly a file path)
     imageBlob = await imglyRemoveBackground(inputForImgly, {
       debug: true, // Keep debug logging
-      // model: 'small', // Use default model (medium)
+      model: 'small', // <-- Use small model
       output: {
         format: 'image/png' // Keep default PNG output
       }
