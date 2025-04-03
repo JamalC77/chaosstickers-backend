@@ -44,26 +44,19 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
 
   try {
     if (Buffer.isBuffer(inputImage)) {
-      console.log('[backgroundRemovalService] Input is buffer, normalizing with sharp...');
-      const processedInputBuffer = await sharp(inputImage).png().toBuffer();
-      console.log(`[backgroundRemovalService] Normalization complete. Buffer size: ${processedInputBuffer.length} bytes.`);
+      console.log('[backgroundRemovalService] Input is buffer, using directly for Imgly (skipping sharp normalization).');
+      // const processedInputBuffer = await sharp(inputImage).png().toBuffer(); // <-- SKIP SHARP
+      // console.log(`[backgroundRemovalService] Normalization complete. Buffer size: ${processedInputBuffer.length} bytes.`);
 
-      if (processedInputBuffer.length > 0) {
-          // Save normalized buffer to file in the new TEMP_DIR
-          tempFilePath = path.join(TEMP_DIR, `normalized-${Date.now()}.png`);
-          console.log(`[backgroundRemovalService] Saving normalized buffer to: ${tempFilePath}`);
-          fs.writeFileSync(tempFilePath, processedInputBuffer);
-          
-          // Pass the direct file path string to Imgly
-          inputForImgly = tempFilePath; 
-          console.log(`[backgroundRemovalService] Using direct file path for Imgly: ${inputForImgly}`);
-      } else {
-          console.warn('[backgroundRemovalService] Warning: Normalized buffer size is 0.');
-          throw new Error('Normalized image buffer is empty after sharp processing.');
-      }
+      // Use the original input buffer directly
+      inputForImgly = inputImage;
+
+      // Remove file saving logic again
+      // if (processedInputBuffer.length > 0) { ... } else { ... }
       
     } else {
       // If input is a URL string, pass it directly
+      console.log('[backgroundRemovalService] Input is URL string, using directly for Imgly.');
       inputForImgly = inputImage;
     }
 
