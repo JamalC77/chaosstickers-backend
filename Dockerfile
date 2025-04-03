@@ -6,6 +6,9 @@
 # Start with a standard Debian-based image (like 'bookworm') for better compatibility.
 FROM node:20-bookworm-slim
 
+# Install OpenSSL (recommended by Prisma warning)
+RUN apt-get update -y && apt-get install -y openssl
+
 # Set the working directory in the container
 WORKDIR /app
 
@@ -14,9 +17,8 @@ COPY package*.json ./
 # If using Prisma, copy the schema
 COPY prisma ./prisma/
 
-# Install app dependencies
-# Use --omit=dev if you don't need devDependencies in production
-RUN npm install --omit=dev
+# Install app dependencies (including devDependencies needed for build)
+RUN npm install
 
 # If using Prisma, generate the client
 # Use --no-engine if your database is remote and you don't need the query engine binaries
