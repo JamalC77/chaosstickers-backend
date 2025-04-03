@@ -32,10 +32,6 @@ COPY . .
 RUN npm run build
 # Or your specific build command if different
 
-# Create directory and copy Imgly assets from installed node_modules within the container
-RUN mkdir -p /app/assets/imgly && \
-    cp node_modules/@imgly/background-removal-node/dist/*.{wasm,onnx} /app/assets/imgly/
-
 # Make port 3001 available to the world outside this container (adjust if needed)
 EXPOSE 3001
 

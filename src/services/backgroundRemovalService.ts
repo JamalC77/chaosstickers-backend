@@ -9,9 +9,6 @@ import { pathToFileURL } from 'url'; // <-- Import pathToFileURL
 
 dotenv.config();
 
-// Define the path where assets are copied in the Dockerfile
-const IMGLY_ASSET_PATH = '/app/assets/imgly';
-
 const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
 
@@ -71,7 +68,6 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
     console.log(`[backgroundRemovalService] Removing background using Imgly with input type: ${typeof inputForImgly}...`);
     // Use the Imgly library with the potentially normalized input (now possibly a file path)
     imageBlob = await imglyRemoveBackground(inputForImgly, {
-      publicPath: `file://${IMGLY_ASSET_PATH}/`, // Point to local assets
       debug: true, // Enable debug logging
       model: 'small', // Try the smaller model
       output: { 
