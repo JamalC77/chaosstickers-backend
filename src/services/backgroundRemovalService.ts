@@ -41,15 +41,9 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
       console.log(`[backgroundRemovalService] Normalization complete. Buffer size: ${processedInputBuffer.length} bytes.`);
 
       if (processedInputBuffer.length > 0) {
-          // Save normalized buffer to file
-          tempFilePath = path.join(TEMP_DIR, `normalized-${Date.now()}.png`);
-          console.log(`[backgroundRemovalService] Saving normalized buffer to: ${tempFilePath}`);
-          fs.writeFileSync(tempFilePath, processedInputBuffer);
-          
-          // Convert file path to file:// URI for Imgly
-          const fileURL = pathToFileURL(tempFilePath);
-          inputForImgly = fileURL.toString(); 
-          console.log(`[backgroundRemovalService] Using file URL for Imgly: ${inputForImgly}`);
+          // Directly use the buffer for Imgly
+          inputForImgly = processedInputBuffer;
+          console.log(`[backgroundRemovalService] Using normalized buffer directly for Imgly.`);
       } else {
           console.warn('[backgroundRemovalService] Warning: Normalized buffer size is 0.');
           throw new Error('Normalized image buffer is empty after sharp processing.');
