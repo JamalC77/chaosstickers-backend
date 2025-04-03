@@ -4,7 +4,7 @@
 # Choose a version compatible with your project (e.g., 18, 20)
 # Using Alpine Linux variants can be smaller but sometimes lack libraries needed by native modules.
 # Start with a standard Debian-based image (like 'bookworm') for better compatibility.
-FROM node:20-bookworm-slim
+FROM node:18-bookworm-slim
 
 # Install OpenSSL (recommended by Prisma warning)
 RUN apt-get update -y && apt-get install -y openssl
