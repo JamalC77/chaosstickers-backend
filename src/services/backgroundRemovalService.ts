@@ -44,19 +44,20 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
 
   try {
     if (Buffer.isBuffer(inputImage)) {
-      console.log('[backgroundRemovalService] Input is buffer, normalizing with sharp...'); // Re-enable sharp
-      const processedInputBuffer = await sharp(inputImage).png().toBuffer(); // Re-enable sharp
-      console.log(`[backgroundRemovalService] Normalization complete. Buffer size: ${processedInputBuffer.length} bytes.`);
+      console.log('[backgroundRemovalService] Input is buffer, SAVING DIRECTLY (bypassing sharp normalization for debug)...'); // <-- Modified log
+      // const processedInputBuffer = await sharp(inputImage).png().toBuffer(); // <-- Temporarily comment out sharp
+      const processedInputBuffer = inputImage; // <-- Use original buffer
+      console.log(`[backgroundRemovalService] Using original buffer. Buffer size: ${processedInputBuffer.length} bytes.`); // <-- Modified log
 
-      // Ensure buffer isn't empty after sharp processing
+      // Ensure buffer isn't empty
       if (processedInputBuffer.length === 0) {
-         console.warn('[backgroundRemovalService] Warning: Normalized buffer size is 0 after sharp processing.');
-         throw new Error('Normalized image buffer is empty after sharp processing.');
+         console.warn('[backgroundRemovalService] Warning: Input buffer size is 0.'); // <-- Modified log
+         throw new Error('Input image buffer is empty.'); // <-- Modified log
       }
 
-      // Save normalized buffer to file
-      tempFilePath = path.join(TEMP_DIR, `normalized-${Date.now()}.png`);
-      console.log(`[backgroundRemovalService] Saving normalized buffer to: ${tempFilePath}`);
+      // Save original buffer to file
+      tempFilePath = path.join(TEMP_DIR, `original-${Date.now()}.png`); // <-- Changed filename slightly
+      console.log(`[backgroundRemovalService] Saving original buffer to: ${tempFilePath}`);
       try {
           fs.writeFileSync(tempFilePath, processedInputBuffer);
           console.log(`[backgroundRemovalService] File written successfully.`);
