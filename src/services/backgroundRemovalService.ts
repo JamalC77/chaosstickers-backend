@@ -48,15 +48,27 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
       const processedInputBuffer = await sharp(inputImage).png().toBuffer(); // Re-enable sharp
       console.log(`[backgroundRemovalService] Normalization complete. Buffer size: ${processedInputBuffer.length} bytes.`);
 
-      // Use the SHARP-PROCESSED buffer directly
-      inputForImgly = processedInputBuffer;
-      console.log('[backgroundRemovalService] Using sharp-normalized buffer directly for Imgly.');
-
       // Ensure buffer isn't empty after sharp processing
       if (processedInputBuffer.length === 0) {
          console.warn('[backgroundRemovalService] Warning: Normalized buffer size is 0 after sharp processing.');
          throw new Error('Normalized image buffer is empty after sharp processing.');
       }
+
+      // Save normalized buffer to file
+      tempFilePath = path.join(TEMP_DIR, `normalized-${Date.now()}.png`);
+      console.log(`[backgroundRemovalService] Saving normalized buffer to: ${tempFilePath}`);
+      try {
+          fs.writeFileSync(tempFilePath, processedInputBuffer);
+          console.log(`[backgroundRemovalService] File written successfully.`);
+      } catch (writeError) {
+          console.error(`[backgroundRemovalService] Error writing temporary file ${tempFilePath}:`, writeError);
+          const message = writeError instanceof Error ? writeError.message : String(writeError);
+          throw new Error(`Failed to write temporary image file: ${message}`);
+      }
+      
+      // Pass the direct file path string to Imgly
+      inputForImgly = tempFilePath; 
+      console.log(`[backgroundRemovalService] Using direct file path for Imgly: ${inputForImgly}`);
       
     } else {
       // If input is a URL string, pass it directly
@@ -72,13 +84,11 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
     console.log(`[backgroundRemovalService] Removing background using Imgly with input type: ${typeof inputForImgly}...`);
     // Use the Imgly library with the potentially normalized input (now possibly a file path)
     imageBlob = await imglyRemoveBackground(inputForImgly, {
-      debug: true, // Enable debug logging
-      model: 'small', // Try the smaller model
-      output: { 
-        // Specify output if needed, otherwise defaults are fine
+      debug: true, // Keep debug logging
+      // model: 'small', // Use default model (medium)
+      output: {
         format: 'image/png' // Keep default PNG output
       }
-      // config options if needed
     });
     console.log('[backgroundRemovalService] Background removal successful.');
 
