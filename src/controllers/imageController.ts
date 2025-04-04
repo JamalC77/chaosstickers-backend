@@ -1,5 +1,5 @@
 import { RequestHandler } from 'express';
-import { generateImage } from '../services/googleGenAIService';
+import { generateImage } from '../services/lumaAIService'; // Or '../services/lumaAIService'
 import { saveGeneratedImage, getRecentGeneratedImages, getUserGeneratedImages, getImageById, saveImageWithRemovedBackground } from '../services/databaseService';
 import { removeBackground } from '../services/backgroundRemovalService';
 
@@ -8,11 +8,11 @@ import { removeBackground } from '../services/backgroundRemovalService';
 // Filename: singleStickerPrompt.js
 
 const PROMPT_PREFIX = `
-Kiss-cut style image of [INSERT_USER_PROMPT] with:
+Image of [INSERT_USER_PROMPT] with:
 • A thick white outline surrounding the entire design main subject
 • Bold, high-contrast details
 • Focus on the main subject only, making it easy to cut out
-• IMPORTANT: The background must be highly contrasting to the main subject.
+• IMPORTANT: The background must be an extremely contrasting solid color compared to the main subject.
 
 Absolutely DO NOT include:
 • No text, logos, brand names, or watermarks
@@ -21,7 +21,6 @@ Absolutely DO NOT include:
 `;
 
 // Simple in-memory cache to prevent duplicate requests
-// Note: Caching ImgBB URLs should be fine, as they are regular strings.
 const requestCache = new Map<string, { imageUrl: string; timestamp: number }>();
 const CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
 
@@ -43,23 +42,20 @@ export const generateImageController: RequestHandler = async (req, res) => {
     
     const enhancedPrompt = PROMPT_PREFIX.replace('[INSERT_USER_PROMPT]', prompt);
     
-    // 1. Generate image using the Google service (returns base64)
-    const base64ImageData = await generateImage(enhancedPrompt);
-    console.log(`[generateImageController] Image generated (base64 received)`);
+    // 1. Generate image using the imported service (returns Buffer)
+    console.log('[generateImageController] Calling generateImage service');
+    const imageBuffer = await generateImage(enhancedPrompt);
+    console.log(`[generateImageController] Image Buffer received from service`);
 
-    // 2. Convert base64 to Buffer
-    const imageBuffer = Buffer.from(base64ImageData, 'base64');
-
-    // 3. Remove background and upload transparent result to ImgBB
-    // The removeBackground service now handles the ImgBB upload internally
+    // 2. Remove background and upload transparent result to ImgBB
     const finalImageUrl = await removeBackground(imageBuffer);
     console.log(`[generateImageController] Background removed and uploaded to ImgBB: ${finalImageUrl}`);
     
-    // 4. Save the final ImgBB URL (transparent image) to database
+    // 3. Save the final ImgBB URL (transparent image) to database
     const savedImage = await saveGeneratedImage(prompt, finalImageUrl, userId || undefined);
     console.log(`[generateImageController] Final ImgBB URL saved to DB (ID: ${savedImage.id})`);
     
-    // 5. Cache the final ImgBB URL (transparent image)
+    // 4. Cache the final ImgBB URL (transparent image)
     requestCache.set(cacheKey, { imageUrl: finalImageUrl, timestamp: Date.now() });
     
     return res.status(200).json({ 

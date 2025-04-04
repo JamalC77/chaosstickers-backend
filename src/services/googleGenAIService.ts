@@ -9,7 +9,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEN_API_KEY || "" });
 // Define the Imagen 3 model to use
 const IMAGE_GEN_MODEL = "imagen-3.0-generate-002";
 
-export async function generateImage(prompt: string): Promise<string> {
+export async function generateImage(prompt: string): Promise<Buffer> {
   if (!process.env.GOOGLE_GEN_API_KEY) {
     throw new Error('GOOGLE_GEN_API_KEY is not set in environment variables');
   }
@@ -34,8 +34,8 @@ export async function generateImage(prompt: string): Promise<string> {
         const generatedImage = response.generatedImages[0];
         if (generatedImage && generatedImage.image && generatedImage.image.imageBytes) {
             console.log('Image generated successfully by Google Imagen 3.');
-            // Return the base64 image data directly
-            return generatedImage.image.imageBytes; 
+            // Convert base64 to Buffer before returning
+            return Buffer.from(generatedImage.image.imageBytes, 'base64');
         }
     }
 
