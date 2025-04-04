@@ -8,12 +8,11 @@ import { removeBackground } from '../services/backgroundRemovalService';
 // Filename: singleStickerPrompt.js
 
 const PROMPT_PREFIX = `
-Sticker illustration of a [INSERT_USER_PROMPT] with:
-• A thick white outline surrounding the entire design
+Kiss-cut style image of [INSERT_USER_PROMPT] with:
+• A thick white outline surrounding the entire design main subject
 • Bold, high-contrast details
 • Focus on the main subject only, making it easy to cut out
 • IMPORTANT: The background must be highly contrasting to the main subject.
-
 
 Absolutely DO NOT include:
 • No text, logos, brand names, or watermarks

@@ -1,5 +1,6 @@
 import { RequestHandler } from 'express';
 import { prisma } from '../server'; // Adjust import based on your prisma client instance location
+import { GeneratedImage } from '@prisma/client'; // Import the GeneratedImage type
 
 // Placeholder for getting purchased designs
 export const getPurchasedDesignsController: RequestHandler = async (req, res) => {
@@ -34,50 +35,47 @@ export const getPurchasedDesignsController: RequestHandler = async (req, res) =>
   }
 };
 
-// Placeholder for getting recent designs
+// Gets all recent designs, regardless of purchase status
 export const getRecentDesignsController: RequestHandler = async (req, res) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
   const skip = (page - 1) * limit;
 
   try {
-    // Fetch the most recent distinct image URLs from OrderItems
-     const recentOrderItems = await prisma.orderItem.findMany({
-       orderBy: {
-         // Assuming OrderItem has a relation to Order and Order has createdAt
-         // Or if OrderItem itself has a timestamp. Adjust accordingly.
-         // This assumes we want items from the most recent orders.
-         order: { 
-            createdAt: 'desc'
-         }
-       },
-       select: {
-         imageUrl: true,
-       },
-       distinct: ['imageUrl'], // Get distinct image URLs
+    // --- DEBUG LOGGING START ---
+    console.log(`[getRecentDesigns] Received page: ${req.query.page}, Parsed page: ${page}`);
+    console.log(`[getRecentDesigns] Limit: ${limit}, Calculated skip: ${skip}`);
+    // --- DEBUG LOGGING END ---
+
+    // Fetch the full GeneratedImage objects
+    const recentDesignsData: GeneratedImage[] = await prisma.generatedImage.findMany({ // Type the result
+       orderBy: [
+         { createdAt: 'desc' },
+         { id: 'asc' }
+       ],
+       // No 'select' clause needed - fetch all fields by default
        skip: skip,
        take: limit,
      });
 
-     // Get the total count of distinct designs using groupBy
-     const distinctCountResult = await prisma.orderItem.groupBy({
-        by: ['imageUrl'],
-        _count: {
-            imageUrl: true, // We need to count something, imageUrl is fine
-        },
-     });
-     const totalDistinctDesigns = distinctCountResult.length;
+     const totalDesigns = await prisma.generatedImage.count();
+
+     // --- DEBUG LOGGING START ---
+     const totalPages = Math.ceil(totalDesigns / limit)
+     console.log(`[getRecentDesigns] Found totalDesigns: ${totalDesigns}, Calculated totalPages: ${totalPages}`);
+     // --- DEBUG LOGGING END ---
 
 
-    const designs = recentOrderItems.map(item => item.imageUrl);
+    // No mapping needed, recentDesignsData already has the full objects
+    console.log(`[getRecentDesigns] Returning ${recentDesignsData.length} full design objects for page ${page}`);
 
-    res.status(200).json({ 
-        designs: designs,
+    res.status(200).json({
+        designs: recentDesignsData, // Send the full array of objects
         pagination: {
             currentPage: page,
             pageSize: limit,
-            totalItems: totalDistinctDesigns,
-            totalPages: Math.ceil(totalDistinctDesigns / limit),
+            totalItems: totalDesigns,
+            totalPages: totalPages, // Use calculated totalPages
         }
      });
   } catch (error) {

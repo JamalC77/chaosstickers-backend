@@ -41,6 +41,7 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
   let imageBlob: Blob;
   let tempFilePath: string | null = null; // Store path to normalized file
   let inputForImgly: string | Buffer | undefined; // <-- Declare here with wider scope
+  let cleanedBuffer: Buffer | null = null; // <-- Declare cleanedBuffer here
 
   try {
     if (Buffer.isBuffer(inputImage)) {
@@ -86,12 +87,22 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
     // Use the Imgly library with the potentially normalized input (now possibly a file path)
     imageBlob = await imglyRemoveBackground(inputForImgly, {
       debug: true, // Keep debug logging
-      model: 'small', // <-- Use small model
+      model: 'medium', // <-- Use medium model for potentially better accuracy
       output: {
         format: 'image/png' // Keep default PNG output
       }
     });
     console.log('[backgroundRemovalService] Background removal successful.');
+
+    // --- Post-processing step ---
+    console.log('[backgroundRemovalService] Post-processing: Applying median filter to remove artifacts...');
+    const removedBgBuffer = Buffer.from(await imageBlob.arrayBuffer());
+    cleanedBuffer = await sharp(removedBgBuffer)
+      .median(5) // Apply a 5x5 median filter to remove small speckles
+      .png()     // Ensure output is PNG
+      .toBuffer();
+    console.log('[backgroundRemovalService] Median filter applied successfully.');
+    // --- End Post-processing step ---
 
   } catch (error) {
      console.error('[backgroundRemovalService] Error removing background with Imgly:', error);
@@ -112,17 +123,18 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
   }
 
   try {
-    // Convert Blob to Buffer for ImgBB upload
-    const arrayBuffer = await imageBlob.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64Result = buffer.toString('base64');
+    // Convert cleaned Buffer to base64 for ImgBB upload
+    if (!cleanedBuffer) {
+        throw new Error('Cleaned buffer is null after post-processing.');
+    }
+    const base64Result = cleanedBuffer.toString('base64'); // Use the cleaned buffer
 
     // Upload the processed image (with transparency) to ImgBB
     const form = new FormData();
     form.append('key', IMGBB_API_KEY);
     form.append('image', base64Result);
 
-    console.log('[backgroundRemovalService] Uploading background-removed image to ImgBB...');
+    console.log('[backgroundRemovalService] Uploading post-processed image to ImgBB...');
     const imgbbResponse = await fetch(IMGBB_UPLOAD_URL, {
       method: 'POST',
       body: form,
@@ -145,8 +157,8 @@ export async function removeBackground(inputImage: string | Buffer): Promise<str
     }
 
   } catch (error) {
-    console.error('[backgroundRemovalService] Error uploading background-removed image to ImgBB:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error during ImgBB upload';
-    throw new Error(`Failed to upload background-removed image to ImgBB: ${errorMessage}`);
+    console.error('[backgroundRemovalService] Error during post-processing or ImgBB upload:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error during post-processing/upload';
+    throw new Error(`Failed during post-processing or upload to ImgBB: ${errorMessage}`);
   }
 } 
