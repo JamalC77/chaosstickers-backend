@@ -190,7 +190,7 @@ export const stripeWebhookHandler: RequestHandler = async (req, res) => {
       try {
         const orderLink = `https://chaos-stickers.com/orders/${order.printifyOrderId}`;
         const emailHtml = `
-          <h1>Thanks for your Chaos Stickers order, ${shippingAddress.first_name}!</h1>
+          <h1>Thanks for your ChaosStickers order, ${shippingAddress.first_name}!</h1>
           <p>Your order #${order.id} has been confirmed and is now being processed.</p>
           <p>Sticker Image:</p>
           <img src="${imageUrl}" alt="Your Sticker" width="100" /> 
@@ -202,7 +202,7 @@ export const stripeWebhookHandler: RequestHandler = async (req, res) => {
         await resend.emails.send({
           from: 'orders@chaos-stickers.com', // Replace with your verified sending domain/email
           to: shippingAddress.email,
-          subject: `Chaos Stickers Order Confirmation #${order.id}`,
+          subject: `ChaosStickers Order Confirmation #${order.id}`,
           html: emailHtml,
         });
         console.log(`[Webhook ${eventId}] Confirmation email sent successfully to ${shippingAddress.email}`);
