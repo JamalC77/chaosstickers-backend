@@ -10,17 +10,15 @@ import { removeBackground } from '../services/backgroundRemovalService';
 const PROMPT_PREFIX = `
 Sticker illustration of a [INSERT_USER_PROMPT] with:
 • A thick white outline surrounding the entire design
-• Bright, vibrant colors that pop
-• A simplified, cartoonish style
-• A fun, whimsical, modern, cute tone
 • Bold, high-contrast details
 • Focus on the main subject only, making it easy to cut out
-• IMPORTANT: The background must be transparent.
+• IMPORTANT: The background must be highly contrasting to the main subject.
 
 
 Absolutely DO NOT include:
 • No text, logos, brand names, or watermarks
 • No additional decorative shapes or backgrounds
+• No inappropriate content
 `;
 
 // Simple in-memory cache to prevent duplicate requests

@@ -87,20 +87,6 @@ export async function createCheckoutSession(items: PaymentItem[], shippingDetail
     const isShippingFree = totalQuantity >= 10;
     const finalShippingCost = isShippingFree ? 0 : standardShippingCost;
 
-    // Add shipping as a line item only if it's not free
-    if (!isShippingFree) {
-      lineItems.push({
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: 'Shipping & Handling',
-          },
-          unit_amount: finalShippingCost, // Use final calculated shipping cost
-        },
-        quantity: 1,
-      });
-    }
-
     // Define success and cancel URLs
     const successUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/confirmation?session_id={CHECKOUT_SESSION_ID}` : 'http://localhost:3000/confirmation?session_id={CHECKOUT_SESSION_ID}';
     const cancelUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/checkout` : 'http://localhost:3000/checkout';
