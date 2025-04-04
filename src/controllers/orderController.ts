@@ -121,19 +121,26 @@ export const getOrderStatusController: RequestHandler = async (req, res) => {
   try {
     const { orderId } = req.params;
     
-    // Validate orderId is a number
-    const numericOrderId = parseInt(orderId, 10);
-    if (isNaN(numericOrderId)) {
-      return res.status(400).json({ error: 'Invalid Order ID format. Must be a number.' });
-    }
+    // We are querying by printifyOrderId (string), so no need to parse as integer here
+    // const numericOrderId = parseInt(orderId, 10);
+    // if (isNaN(numericOrderId)) {
+    //   return res.status(400).json({ error: 'Invalid Order ID format. Must be a number.' });
+    // }
     
-    // Get the order from our database using the validated ID
-    const order = await prisma.order.findUnique({
+    // Get the order using findFirst with the printifyOrderId (string)
+    const order = await prisma.order.findFirst({
       where: {
-        id: numericOrderId // Use the parsed numeric ID
+        printifyOrderId: orderId // Use the original string orderId from params
       },
       include: {
-        items: true
+        items: true,
+        user: { // Include related user details
+          select: {
+            name: true,
+            email: true
+          }
+        }
+        // Shipping details are directly on the Order model and fetched by default
       }
     });
     
@@ -141,27 +148,62 @@ export const getOrderStatusController: RequestHandler = async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
     
-    // Get the latest status from Printify
-    if (!order.printifyOrderId) {
-      return res.status(400).json({ error: 'Order has no Printify ID' });
-    }
-    
-    const printifyStatus = await getOrderStatus(order.printifyOrderId);
-    
-    // Update our database if the status changed
-    if (printifyStatus !== order.status) {
-      await prisma.order.update({
-        where: {
-          id: order.id
-        },
-        data: {
-          status: printifyStatus
+    // Attempt to get the latest status and shipping info from Printify
+    let printifyStatus = order.status; // Default to stored status
+    let printifyError = null;
+
+    if (order.printifyOrderId) {
+      try {
+        console.log(`[getOrderStatusController] Fetching Printify details for order ${order.id} (Printify ID: ${order.printifyOrderId})`);
+        // getOrderStatus now returns the full Printify order object
+        const printifyOrderData = await getOrderStatus(order.printifyOrderId);
+        printifyStatus = printifyOrderData.status;
+
+        // Overwrite local shipping details with Printify data if available
+        if (printifyOrderData.address_to) {
+          console.log(`[getOrderStatusController] Updating shipping details for order ${order.id} from Printify data.`);
+          const addr = printifyOrderData.address_to;
+          order.shippingFirstName = addr.first_name;
+          order.shippingLastName = addr.last_name;
+          order.shippingEmail = addr.email;
+          order.shippingPhone = addr.phone;
+          order.shippingCountry = addr.country;
+          order.shippingRegion = addr.region;
+          order.shippingAddress1 = addr.address1;
+          order.shippingAddress2 = addr.address2 || null; // Ensure null if missing
+          order.shippingCity = addr.city;
+          order.shippingZip = addr.zip;
         }
-      });
-      order.status = printifyStatus; // Update actual order status
+
+        // Update our database status only if it changed and fetch was successful
+        if (printifyStatus !== order.status) {
+          console.log(`[getOrderStatusController] Updating status for order ${order.id} from ${order.status} to ${printifyStatus}`);
+          await prisma.order.update({
+            where: {
+              id: order.id
+            },
+            data: {
+              status: printifyStatus
+            }
+          });
+          order.status = printifyStatus; // Update status in the object being returned
+        }
+      } catch (err: any) {
+        printifyError = err.message || 'Failed to fetch details from Printify';
+        console.error(`[getOrderStatusController] WARN: Could not fetch details from Printify for order ${order.id} (Printify ID: ${order.printifyOrderId}): ${printifyError}`);
+        // Keep the locally stored status and shipping info
+      }
+    } else {
+      console.warn(`[getOrderStatusController] Order ${order.id} has no Printify ID, cannot fetch details.`);
+      printifyError = 'Order has no Printify ID';
     }
     
-    return res.status(200).json({ order });
+    // Return the order data (even if Printify fetch failed)
+    // Optionally include the error note for debugging/display
+    return res.status(200).json({ 
+      order, 
+      printifyStatusError: printifyError // Add note about Printify status fetch
+    });
   } catch (error) {
     console.error('Error in getOrderStatusController:', error);
     return res.status(500).json({ error: 'Failed to get order status' });

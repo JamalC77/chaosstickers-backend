@@ -188,7 +188,7 @@ export const stripeWebhookHandler: RequestHandler = async (req, res) => {
       // ** Send Confirmation Email **
       console.log(`[Webhook ${eventId}] Attempting to send confirmation email for order ${order.id} to ${shippingAddress.email}`);
       try {
-        const orderLink = `https://chaos-stickers.com/orders/${order.id}`;
+        const orderLink = `https://chaos-stickers.com/orders/${order.printifyOrderId}`;
         const emailHtml = `
           <h1>Thanks for your Chaos Stickers order, ${shippingAddress.first_name}!</h1>
           <p>Your order #${order.id} has been confirmed and is now being processed.</p>

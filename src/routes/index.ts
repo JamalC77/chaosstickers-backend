@@ -10,7 +10,7 @@ const router = express.Router();
 
 // Apply route groups
 router.use('/generate-image', imageRoutes);
-router.use('/order', orderRoutes);
+router.use('/orders', orderRoutes);
 router.use('/payment', paymentRoutes);
 router.use('/designs', designRoutes);
 

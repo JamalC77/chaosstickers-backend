@@ -393,23 +393,36 @@ export async function createOrder(orderDetails: OrderDetails): Promise<string> {
 }
 
 /**
- * Get order status from Printify.
+ * Fetch full order details for a specific order from Printify.
  */
-export async function getOrderStatus(orderId: string) {
+export async function getOrderStatus(orderId: string): Promise<PrintifyOrderResponse> {
   try {
-    if (orderId.startsWith('mock-')) {
-      console.log(`Using mock order ID: ${orderId} - returning mock status`);
-      return 'pending';
+    // NOTE: Removed User ID logic as per user instruction.
+    // Using the /shops/{shopId}/orders/{orderId}.json endpoint directly.
+    
+    // Ensure SHOP_ID is available (it's read at the top level of the file)
+    if (!SHOP_ID) {
+        console.error('PRINTIFY_SHOP_ID environment variable is not set.');
+        throw new Error('Printify shop ID configuration is missing.');
     }
 
-    const currentShopId = process.env.PRINTIFY_SHOP_ID || SHOP_ID;
-    const order = await printifyRequest(`shops/${currentShopId}/orders/${orderId}`, 'GET');
-    return order.status;
-  } catch (error) {
-    console.error('Error fetching order status from Printify:', error);
-    throw new Error(
-      `Failed to fetch order status: ${error instanceof Error ? error.message : String(error)}`
-    );
+    const endpoint = `/shops/${SHOP_ID}/orders/${orderId}.json`;
+
+    console.log(`[getOrderStatus] Fetching order data from Printify endpoint: ${endpoint}`);
+    const orderData = await printifyRequest(endpoint);
+
+    // Basic validation of the response structure
+    if (!orderData || typeof orderData !== 'object' || !orderData.id || !orderData.status || !orderData.address_to) {
+      console.error('[getOrderStatus] Invalid or incomplete data in Printify response:', orderData);
+      throw new Error('Invalid response received from Printify API when fetching order details.');
+    }
+
+    console.log(`[getOrderStatus] Received order details from Printify for ID: ${orderData.id}, Status: ${orderData.status}`);
+    return orderData as PrintifyOrderResponse;
+  } catch (error: any) {
+    console.error(`Error fetching order details from Printify: ${error.message}`);
+    const errorMessage = error.message || 'Unknown error fetching from Printify';
+    throw new Error(`Failed to fetch order details: ${errorMessage}`);
   }
 }
 
