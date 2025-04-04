@@ -7,6 +7,29 @@ const PRINTIFY_API_URL = 'https://api.printify.com/v1';
 const PRINTIFY_API_KEY = process.env.PRINTIFY_API_KEY || '';
 const SHOP_ID = process.env.PRINTIFY_SHOP_ID || '';
 
+// --- Moved Interfaces to Top Level ---
+interface PrintifyAddress {
+  first_name: string;
+  last_name: string;
+  region: string;
+  address1: string;
+  address2?: string;
+  city: string;
+  zip: string;
+  email: string;
+  phone: string;
+  country: string;
+  company?: string;
+}
+
+interface PrintifyOrderResponse {
+  id: string;
+  status: string;
+  address_to: PrintifyAddress;
+  // Add other fields if needed later
+}
+// --- End Moved Interfaces ---
+
 // This is a simplified version. In a real application, you would need to handle more Printify-specific details
 interface ShippingAddress {
   first_name: string;
