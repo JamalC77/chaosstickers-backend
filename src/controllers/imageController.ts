@@ -8,14 +8,14 @@ import { removeBackground } from '../services/backgroundRemovalService';
 // Filename: singleStickerPrompt.js
 
 const PROMPT_PREFIX = `
-Image of [INSERT_USER_PROMPT] with:
+Image of user prompt: [INSERT_USER_PROMPT] end user prompt. With:
 • A thick white outline surrounding the entire design main subject
-• Bold, high-contrast details
-• Focus on the main subject only, making it easy to cut out
-• IMPORTANT: The background must be an extremely contrasting solid color compared to the main subject.
+• Ideally this looks cute, colorful, and fun unless the user specifies otherwise.
+• Focus on the main subject only, making it easy to cut out.
+• IMPORTANT: The background must be an extremely contrasting solid color compared to the main subject to make background removal easier.
 
 Absolutely DO NOT include:
-• No text, logos, brand names, or watermarks
+• No text, official logos, brand names, or watermarks
 • No additional decorative shapes or backgrounds
 • No inappropriate content
 `;
