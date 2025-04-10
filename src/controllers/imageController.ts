@@ -10,15 +10,16 @@ import { removeBackground } from '../services/backgroundRemovalService';
 const PROMPT_PREFIX = `
 Image of USER_PROMPT: [INSERT_USER_PROMPT] END_USER_PROMPT. With:
 • Follow the user prompt as closely as possible as long as it doesn't conflict with the other guidelines.
-• A thick white outline surrounding the entire design main subject
+• A thin white outline surrounding the entire design's main subject which allows for easy cutting out.
 • Ideally this looks cute, colorful, and fun unless the user specifies otherwise.
 • Focus on the main subject and supporting elements only, making it easy to cut out.
-• IMPORTANT: The background must be an extremely contrasting solid color compared to the main subject to make background removal easier.
+• IMPORTANT: The background must be black to the main subject to make background removal easier.
 
 Absolutely DO NOT include:
 • No text, official logos, brand names, or watermarks
 • No additional decorative backgrounds
 • No inappropriate content
+• No NSFW content
 `;
 
 // Simple in-memory cache to prevent duplicate requests
@@ -27,7 +28,7 @@ const CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 export const generateImageController: RequestHandler = async (req, res) => {
   try {
-    const { prompt, regenerate, userId } = req.body;
+    const { prompt, regenerate, userId, referenceUrl } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -45,7 +46,7 @@ export const generateImageController: RequestHandler = async (req, res) => {
     
     // 1. Generate image using the imported service (returns Buffer)
     console.log('[generateImageController] Calling generateImage service');
-    const imageBuffer = await generateImage(enhancedPrompt);
+    const imageBuffer = await generateImage(enhancedPrompt, referenceUrl);
     console.log(`[generateImageController] Image Buffer received from service`);
 
     // 2. Remove background and upload transparent result to ImgBB

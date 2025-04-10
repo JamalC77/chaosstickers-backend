@@ -1,6 +1,7 @@
 import { LumaAI } from 'lumaai';
 import dotenv from 'dotenv';
 import axios from 'axios'; // Import axios
+import { ImageCreateParams } from 'lumaai/resources/generations/image';
 
 dotenv.config();
 
@@ -21,7 +22,7 @@ const MAX_POLLING_ATTEMPTS = 24; // 2 minutes total polling time
 // Helper function to delay execution
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export async function generateImage(prompt: string): Promise<Buffer> { // Return Buffer
+export async function generateImage(prompt: string, referenceUrl?: string): Promise<Buffer> { // Return Buffer
   if (!client) {
     throw new Error('Luma AI client is not initialized. Check LUMAAI_API_KEY.');
   }
@@ -29,12 +30,17 @@ export async function generateImage(prompt: string): Promise<Buffer> { // Return
   try {
     console.log(`Initiating image generation with Luma AI for prompt:`, prompt);
 
-    // 1. Start the generation process (Endpoint seems video-focused)
-    const initialGeneration = await client.generations.image.create({
+
+    const payload: ImageCreateParams = {
       prompt: prompt,
-      aspect_ratio: '1:1', // Keep aspect ratio square for stickers
-      // generation_type: 'image', // Removed: Type definitions indicate this expects 'video' or doesn't support the param here
-    });
+      aspect_ratio: '3:4',
+      model: "photon-1",
+    }
+    if (referenceUrl) {
+      payload.modify_image_ref = { url: referenceUrl, weight: 0.85 };
+    }
+    // 1. Start the generation process (Endpoint seems video-focused)
+    const initialGeneration = await client.generations.image.create(payload);
 
     const generationId = initialGeneration.id;
     if (!generationId) {
