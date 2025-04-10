@@ -8,9 +8,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 });
 
 interface PaymentItem {
+  id: number;
   imageUrl: string;
   quantity: number;
-  removeBackground?: boolean;
 }
 
 // Define an interface for shipping details based on frontend formData
@@ -28,59 +28,56 @@ interface ShippingDetails {
 }
 
 // New function to create a Stripe Checkout Session
-export async function createCheckoutSession(items: PaymentItem[], shippingDetails: ShippingDetails, userId: number): Promise<{ sessionId: string }> {
+export async function createCheckoutSession(items: PaymentItem[], shippingDetails: ShippingDetails): Promise<{ sessionId: string }> {
   try {
     // --- Dynamic Pricing Logic ---
     const basePricePerItem = 350; // $3.50 in cents
-    const backgroundRemovalCost = 200; // $2.00 in cents
     const standardShippingCost = 469; // $4.69 in cents
-    const freeShippingThreshold = 2000; // $20.00 in cents
 
     let totalQuantity = 0;
-    items.forEach(item => totalQuantity += item.quantity);
+    items.forEach(item => totalQuantity += (item.quantity || 0));
 
     let stickerPricePerItem = basePricePerItem;
-    if (totalQuantity >= 5) {
-      stickerPricePerItem = Math.round(basePricePerItem * 0.8); // 20% discount
+    let discountPercentage = 0;
+    if (totalQuantity >= 10) {
+        stickerPricePerItem = Math.round(basePricePerItem * 0.8); // 20% discount
+        discountPercentage = 20;
+    } else if (totalQuantity >= 5) {
+        stickerPricePerItem = Math.round(basePricePerItem * 0.8); // 20% discount
+        discountPercentage = 20;
     } else if (totalQuantity >= 2) {
-      stickerPricePerItem = Math.round(basePricePerItem * 0.9); // 10% discount
+        stickerPricePerItem = Math.round(basePricePerItem * 0.9); // 10% discount
+        discountPercentage = 10;
     }
 
-    let stickerSubtotal = 0;
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
 
     // Add sticker item(s) with potentially discounted price
     items.forEach(item => {
-      const itemSubtotal = stickerPricePerItem * item.quantity;
-      stickerSubtotal += itemSubtotal;
+        if (!item || item.quantity == null || item.quantity <= 0) {
+            console.warn('Skipping invalid item in checkout session creation:', item);
+            return; // Skip invalid items
+        }
+
+      // Use a generic product or create one if needed
+      const stickerProductName = 'Custom Sticker'; // Can potentially add details from item if desired
 
       lineItems.push({
         price_data: {
           currency: 'usd',
           product_data: {
-            name: 'Custom Sticker',
-            // description: `Your custom design: ${item.imageUrl}`, // Optional
-            metadata: { product_id: 'prod_S3JYagYrE9krFR' } // Keep existing product ID if it represents the base sticker
+            name: stickerProductName,
+            description: `Item ID: ${item.id}`, // Include item ID for reference
+            images: [item.imageUrl], // Use item image if possible
+            metadata: {
+                // Keep product_id if you have a specific base product in Stripe
+                // product_id: 'prod_base_sticker' 
+            }
           },
           unit_amount: stickerPricePerItem, // Use the calculated price
         },
         quantity: item.quantity,
       });
-
-      // Add background removal if applicable (price doesn't change)
-      if (item.removeBackground) {
-        stickerSubtotal += backgroundRemovalCost * item.quantity; // Add to subtotal for shipping calc
-        lineItems.push({
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: 'Background Removal Service',
-            },
-            unit_amount: backgroundRemovalCost,
-          },
-          quantity: item.quantity,
-        });
-      }
     });
 
     // Determine if shipping is free based on quantity
@@ -91,6 +88,11 @@ export async function createCheckoutSession(items: PaymentItem[], shippingDetail
     const successUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/confirmation?session_id={CHECKOUT_SESSION_ID}` : 'http://localhost:3000/confirmation?session_id={CHECKOUT_SESSION_ID}';
     const cancelUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/checkout` : 'http://localhost:3000/checkout';
 
+    // Ensure lineItems is not empty
+    if (lineItems.length === 0) {
+      throw new Error('No valid items found to create a checkout session.');
+    }
+
     // Create the Checkout Session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -99,35 +101,33 @@ export async function createCheckoutSession(items: PaymentItem[], shippingDetail
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata: {
-        userId: userId.toString(),
+        // Store essential info needed by the webhook
         shipping_details: JSON.stringify(shippingDetails),
-        image_url: items[0]?.imageUrl || '', // Still assuming one primary image for now
-        quantity: items[0]?.quantity.toString() || '0',
-        has_removed_background: items[0]?.removeBackground ? 'true' : 'false',
-        product_id: 'prod_S3JYagYrE9krFR', // Keep product ID for reference
-        applied_discount: stickerPricePerItem !== basePricePerItem ? `${((basePricePerItem - stickerPricePerItem) / basePricePerItem * 100).toFixed(0)}%` : 'None',
-        shipping_cost_applied: finalShippingCost.toString(), // Store applied shipping cost
+        // Store the *entire* items array as JSON string, including numeric ID
+        items: JSON.stringify(items.map(item => ({ 
+            id: item.id, // Include numeric ID
+            quantity: item.quantity, // Include quantity
+        }))),
+        // Optional: Store calculated values for reference/logging if needed
+        // applied_discount: `${discountPercentage}%`,
+        // shipping_cost_applied: finalShippingCost.toString(),
       },
       customer_email: shippingDetails.email,
-      // Include shipping options to potentially display free shipping clearly in Stripe Checkout
+      // Include shipping options
       shipping_options: [
         {
           shipping_rate_data: {
             type: 'fixed_amount',
             fixed_amount: {
-              amount: finalShippingCost, // Set the calculated shipping cost
+              amount: finalShippingCost,
               currency: 'usd',
             },
             display_name: isShippingFree ? 'Free Shipping (10+ Items)' : 'Standard Shipping',
-            // delivery_estimate: { // Optional: Add delivery estimate
-            //   minimum: { unit: 'business_day', value: 5 },
-            //   maximum: { unit: 'business_day', value: 7 },
-            // },
+            // delivery_estimate: { ... } // Optional
           },
         },
       ],
-      // If collecting address via Stripe:
-      // shipping_address_collection: { allowed_countries: ['US'] }, // Adjust countries as needed
+      // shipping_address_collection: { allowed_countries: ['US'] }, // Collect via Stripe if preferred
     });
 
     if (!session.id) {

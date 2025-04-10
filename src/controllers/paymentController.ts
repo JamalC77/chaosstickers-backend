@@ -2,6 +2,7 @@ import { RequestHandler } from 'express';
 import { createCheckoutSession } from '../services/stripeService';
 
 interface PaymentItem {
+  id: number;
   imageUrl: string;
   quantity: number;
   imageId?: string; // Keep for potential future use, though not used in current flow
@@ -23,14 +24,14 @@ interface CreatePaymentRequestBody {
     city: string;
     zip: string;
   };
-  userId: number; // Keep userId if needed for your application logic
+  // userId: number; // REMOVED - No longer sent from frontend
 }
 
 // Rename controller to reflect its purpose
 export const createCheckoutSessionController: RequestHandler = async (req, res) => {
   try {
     // Explicitly type the request body
-    const { items, shippingAddress, userId } = req.body as CreatePaymentRequestBody;
+    const { items, shippingAddress } = req.body as CreatePaymentRequestBody; // REMOVED userId
 
     // Basic Validations (can be kept or enhanced)
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -44,14 +45,17 @@ export const createCheckoutSessionController: RequestHandler = async (req, res) 
         !shippingAddress.address1 || !shippingAddress.city || !shippingAddress.zip) {
       return res.status(400).json({ error: 'Missing required shipping address fields' });
     }
+    // REMOVED userId validation
+    /*
     if (userId === undefined) {
         return res.status(400).json({ error: 'User ID is required' });
     }
+    */
 
-    // Call the new service function, passing userId
-    const { sessionId } = await createCheckoutSession(items, shippingAddress, userId);
+    // Call the service function without userId
+    const { sessionId } = await createCheckoutSession(items, shippingAddress);
     
-    console.log(`Checkout session created for userId: ${userId}, sessionId: ${sessionId}`);
+    // console.log(`Checkout session created for user email: ${shippingAddress.email}, sessionId: ${sessionId}`); // Updated log
 
     // Return the session ID to the frontend
     return res.status(200).json({ sessionId });
