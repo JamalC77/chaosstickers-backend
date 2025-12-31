@@ -1,16 +1,30 @@
 import { RequestHandler } from 'express';
-import { prisma } from '../server'; // Adjust import based on your prisma client instance location
-import { GeneratedImage } from '@prisma/client'; // Import the GeneratedImage type
+import { prisma } from '../server';
+import { GeneratedImage } from '@prisma/client';
 
-// Placeholder for getting purchased designs
+// Gets purchased designs for a user by email
 export const getPurchasedDesignsController: RequestHandler = async (req, res) => {
-  // TODO: Implement logic to get userId from authenticated request
-  const userId = 1; // Placeholder - replace with actual user ID from auth
+  const email = req.query.email as string | undefined;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email query parameter is required' });
+  }
 
   try {
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+
+    if (!user) {
+      // No user found with this email - return empty designs (not an error)
+      return res.status(200).json({ designs: [] });
+    }
+
     // Fetch orders for the user, including items with image URLs
     const orders = await prisma.order.findMany({
-      where: { userId: userId },
+      where: { userId: user.id },
       include: {
         items: {
           select: {
@@ -19,7 +33,7 @@ export const getPurchasedDesignsController: RequestHandler = async (req, res) =>
         },
       },
       orderBy: {
-        createdAt: 'desc', // Optional: order by most recent purchase
+        createdAt: 'desc',
       },
     });
 

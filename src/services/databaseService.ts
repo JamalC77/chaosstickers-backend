@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../server';
 
 export async function saveGeneratedImage(prompt: string, imageUrl: string, userId?: string) {
   return prisma.generatedImage.create({
