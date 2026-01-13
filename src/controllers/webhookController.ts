@@ -6,8 +6,10 @@ import { prisma } from '../server'; // Assuming prisma client is exported from s
 import { createProduct, createOrder } from '../services/printifyService';
 // Revert path for types import, assuming it's in src/types
 // Assuming ShippingDetails might be defined elsewhere or inline if not used broadly
-// import { ShippingDetails } from '../types'; 
+// import { ShippingDetails } from '../types';
 import { Resend } from 'resend';
+import { validatePrompt, ValidationResult } from '../services/ipValidationService';
+import { createRefund } from '../services/stripeService';
 
 // Define ShippingDetails inline if not imported
 interface ShippingDetails {
@@ -206,6 +208,115 @@ export const stripeWebhookHandler: RequestHandler = async (req, res) => {
         } catch (imageFetchError: any) {
             console.error(`[Webhook ${eventId}] Image URL fetch FAILED:`, imageFetchError);
             return res.status(500).json({ error: `Webhook processing failed: Database error fetching image URLs - ${imageFetchError.message}` });
+        }
+
+        // --- IP Validation Check ---
+        // Validate all image prompts against the IP reject list
+        console.log(`[Webhook ${eventId}] Validating prompts for IP violations...`);
+        try {
+            const itemIds = items.map(item => item.id);
+            const imagesWithPrompts = await prisma.generatedImage.findMany({
+                where: { id: { in: itemIds } },
+                select: { id: true, prompt: true }
+            });
+
+            const violations: { imageId: number; validation: ValidationResult }[] = [];
+
+            for (const image of imagesWithPrompts) {
+                const validation = validatePrompt(image.prompt);
+                if (!validation.isValid) {
+                    violations.push({ imageId: image.id, validation });
+                }
+            }
+
+            if (violations.length > 0) {
+                console.log(`[Webhook ${eventId}] IP VIOLATION DETECTED! Found ${violations.length} item(s) with protected content.`);
+                console.log(`[Webhook ${eventId}] Violations:`, violations.map(v => ({
+                    imageId: v.imageId,
+                    terms: v.validation.violatedTerms.slice(0, 3)
+                })));
+
+                // Auto-refund the payment
+                console.log(`[Webhook ${eventId}] Initiating auto-refund for payment intent: ${paymentIntentId}`);
+                const refundResult = await createRefund(
+                    paymentIntentId,
+                    `IP violation: ${violations[0].validation.violatedTerms.slice(0, 3).join(', ')}`
+                );
+
+                if (refundResult.success) {
+                    console.log(`[Webhook ${eventId}] Refund successful: ${refundResult.refundId}, amount: ${refundResult.amount}`);
+
+                    // Create a rejected order record for tracking
+                    await prisma.order.create({
+                        data: {
+                            userId: appUser.id,
+                            stripePaymentId: paymentIntentId,
+                            status: 'refunded_ip_violation',
+                            shippingFirstName: shippingAddress.first_name,
+                            shippingLastName: shippingAddress.last_name,
+                            shippingEmail: shippingAddress.email,
+                            shippingPhone: shippingAddress.phone,
+                            shippingCountry: shippingAddress.country,
+                            shippingRegion: shippingAddress.region,
+                            shippingAddress1: shippingAddress.address1,
+                            shippingAddress2: shippingAddress.address2 || null,
+                            shippingCity: shippingAddress.city,
+                            shippingZip: shippingAddress.zip,
+                        }
+                    });
+
+                    // Send refund notification email
+                    try {
+                        const refundEmailHtml = `
+                            <h1>Order Refunded - ChaosStickers</h1>
+                            <p>Hi ${shippingAddress.first_name},</p>
+                            <p>Your recent order has been automatically refunded because it contained content that may infringe on protected trademarks or intellectual property.</p>
+                            <p>We cannot create stickers featuring copyrighted characters, logos, or brand names from companies like Disney, Marvel, Nintendo, Pokémon, and others.</p>
+                            <p><strong>Refund Details:</strong></p>
+                            <ul>
+                                <li>Refund ID: ${refundResult.refundId}</li>
+                                <li>Amount: $${((refundResult.amount || 0) / 100).toFixed(2)}</li>
+                                <li>Status: ${refundResult.status}</li>
+                            </ul>
+                            <p>The refund should appear in your account within 5-10 business days, depending on your bank.</p>
+                            <p>We encourage you to try again with original artwork or non-copyrighted designs!</p>
+                            <p>If you believe this was a mistake, please contact us.</p>
+                            <p>Thank you for your understanding,<br/>The ChaosStickers Team</p>
+                        `;
+
+                        await resend.emails.send({
+                            from: 'orders@chaos-stickers.com',
+                            to: shippingAddress.email,
+                            subject: 'ChaosStickers Order Refunded - Protected Content Detected',
+                            html: refundEmailHtml,
+                        });
+                        console.log(`[Webhook ${eventId}] Refund notification email sent to ${shippingAddress.email}`);
+                    } catch (emailError: any) {
+                        console.error(`[Webhook ${eventId}] Failed to send refund notification email:`, emailError);
+                    }
+
+                    return res.status(200).json({
+                        received: true,
+                        action: 'refunded',
+                        reason: 'IP violation detected',
+                        refundId: refundResult.refundId
+                    });
+                } else {
+                    console.error(`[Webhook ${eventId}] Refund FAILED:`, refundResult.error);
+                    // Still reject the order but log the refund failure for manual processing
+                    return res.status(500).json({
+                        error: `Order rejected due to IP violation but refund failed: ${refundResult.error}`,
+                        requiresManualRefund: true,
+                        paymentIntentId: paymentIntentId
+                    });
+                }
+            }
+
+            console.log(`[Webhook ${eventId}] IP validation passed - no violations found.`);
+        } catch (validationError: any) {
+            console.error(`[Webhook ${eventId}] IP Validation Error:`, validationError);
+            // Don't fail the order on validation errors, just log and continue
+            console.log(`[Webhook ${eventId}] Continuing with order despite validation error...`);
         }
 
         // 1. Create Printify Products for EACH item
