@@ -2,6 +2,7 @@ import { RequestHandler } from 'express';
 import { generateImage } from '../services/lumaAIService'; // Or '../services/lumaAIService'
 import { saveGeneratedImage, getRecentGeneratedImages, getUserGeneratedImages, getImageById, saveImageWithRemovedBackground } from '../services/databaseService';
 import { removeBackground } from '../services/backgroundRemovalService';
+import { validatePrompt } from '../services/ipValidationService';
 
 // Standard prefix to add to all image generation requests
 // Filename: chaosStickersPrompt.js
@@ -32,6 +33,18 @@ export const generateImageController: RequestHandler = async (req, res) => {
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    // Validate prompt against IP/brand reject list
+    const validation = validatePrompt(prompt);
+    if (!validation.isValid) {
+      console.log(`[generateImageController] IP violation detected: ${validation.message}`);
+      return res.status(403).json({
+        error: 'Your prompt contains protected brand or trademarked content that we cannot create stickers for.',
+        details: validation.message,
+        violatedTerms: validation.violatedTerms.slice(0, 3), // Only show first 3 terms
+        code: 'IP_VIOLATION'
+      });
     }
 
     const cacheKey = prompt.trim().toLowerCase();

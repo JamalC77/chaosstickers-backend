@@ -145,9 +145,136 @@ export async function createCheckoutSession(items: PaymentItem[], shippingDetail
   }
 }
 
+// --- Refund Functions ---
+
+export interface RefundResult {
+  success: boolean;
+  refundId?: string;
+  amount?: number;
+  status?: string;
+  error?: string;
+}
+
+/**
+ * Creates a full refund for a payment intent
+ * @param paymentIntentId - The Stripe payment intent ID to refund
+ * @param reason - Optional reason for the refund (for internal tracking)
+ * @returns RefundResult with success status and details
+ */
+export async function createRefund(
+  paymentIntentId: string,
+  reason?: string
+): Promise<RefundResult> {
+  try {
+    console.log(`[Stripe] Creating refund for payment intent: ${paymentIntentId}, reason: ${reason || 'Not specified'}`);
+
+    const refund = await stripe.refunds.create({
+      payment_intent: paymentIntentId,
+      reason: 'requested_by_customer', // Stripe's enum value
+      metadata: {
+        internal_reason: reason || 'IP violation detected',
+        refund_type: 'auto_refund',
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    console.log(`[Stripe] Refund created successfully: ${refund.id}, amount: ${refund.amount}, status: ${refund.status}`);
+
+    return {
+      success: true,
+      refundId: refund.id,
+      amount: refund.amount,
+      status: refund.status
+    };
+  } catch (error) {
+    console.error('[Stripe] Error creating refund:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error creating refund';
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+}
+
+/**
+ * Creates a partial refund for a payment intent
+ * @param paymentIntentId - The Stripe payment intent ID to refund
+ * @param amountInCents - The amount to refund in cents
+ * @param reason - Optional reason for the refund
+ * @returns RefundResult with success status and details
+ */
+export async function createPartialRefund(
+  paymentIntentId: string,
+  amountInCents: number,
+  reason?: string
+): Promise<RefundResult> {
+  try {
+    console.log(`[Stripe] Creating partial refund for payment intent: ${paymentIntentId}, amount: ${amountInCents} cents, reason: ${reason || 'Not specified'}`);
+
+    const refund = await stripe.refunds.create({
+      payment_intent: paymentIntentId,
+      amount: amountInCents,
+      reason: 'requested_by_customer',
+      metadata: {
+        internal_reason: reason || 'Partial refund',
+        refund_type: 'partial_refund',
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    console.log(`[Stripe] Partial refund created successfully: ${refund.id}, amount: ${refund.amount}, status: ${refund.status}`);
+
+    return {
+      success: true,
+      refundId: refund.id,
+      amount: refund.amount,
+      status: refund.status
+    };
+  } catch (error) {
+    console.error('[Stripe] Error creating partial refund:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error creating partial refund';
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+}
+
+/**
+ * Gets the refund status for a payment intent
+ * @param paymentIntentId - The Stripe payment intent ID
+ * @returns Array of refunds associated with the payment intent
+ */
+export async function getRefundStatus(paymentIntentId: string): Promise<{
+  hasRefunds: boolean;
+  refunds: Array<{ id: string; amount: number; status: string; created: Date }>;
+}> {
+  try {
+    const refunds = await stripe.refunds.list({
+      payment_intent: paymentIntentId
+    });
+
+    return {
+      hasRefunds: refunds.data.length > 0,
+      refunds: refunds.data.map(r => ({
+        id: r.id,
+        amount: r.amount,
+        status: r.status,
+        created: new Date(r.created * 1000)
+      }))
+    };
+  } catch (error) {
+    console.error('[Stripe] Error getting refund status:', error);
+    return {
+      hasRefunds: false,
+      refunds: []
+    };
+  }
+}
+
 // --- Old createPaymentIntent function (can be removed or kept for reference) ---
 /*
 export async function createPaymentIntent(items: PaymentItem[], shippingDetails: ShippingDetails): Promise<string> {
-  // ... (previous implementation) ... 
+  // ... (previous implementation) ...
 }
 */ 
