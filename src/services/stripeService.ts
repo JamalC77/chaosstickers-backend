@@ -184,7 +184,7 @@ export async function createRefund(
       success: true,
       refundId: refund.id,
       amount: refund.amount,
-      status: refund.status
+      status: refund.status ?? undefined
     };
   } catch (error) {
     console.error('[Stripe] Error creating refund:', error);
@@ -228,7 +228,7 @@ export async function createPartialRefund(
       success: true,
       refundId: refund.id,
       amount: refund.amount,
-      status: refund.status
+      status: refund.status ?? undefined
     };
   } catch (error) {
     console.error('[Stripe] Error creating partial refund:', error);
@@ -259,7 +259,7 @@ export async function getRefundStatus(paymentIntentId: string): Promise<{
       refunds: refunds.data.map(r => ({
         id: r.id,
         amount: r.amount,
-        status: r.status,
+        status: r.status ?? 'unknown',
         created: new Date(r.created * 1000)
       }))
     };
