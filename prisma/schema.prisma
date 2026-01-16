@@ -66,3 +66,15 @@ model GeneratedImage {
   hasRemovedBackground Boolean  @default(false) // Flag to indicate if background was removed
   createdAt           DateTime @default(now())
 }
+
+model MagicLink {
+  id        Int      @id @default(autoincrement())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([token])
+}
